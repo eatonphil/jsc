@@ -1,0 +1,7 @@
+[package]
+name = "jsc"
+version = "0.1.0"
+authors = ["Phil Eaton <philneaton95@gmail.com>"]
+
+[dependencies]
+esprit = "0.0.5"

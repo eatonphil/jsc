@@ -1,0 +1,101 @@
+[[package]]
+name = "easter"
+version = "0.0.5"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+dependencies = [
+ "joker 0.0.5 (registry+https://github.com/rust-lang/crates.io-index)",
+]
+
+[[package]]
+name = "esprit"
+version = "0.0.5"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+dependencies = [
+ "easter 0.0.5 (registry+https://github.com/rust-lang/crates.io-index)",
+ "estree 0.0.5 (registry+https://github.com/rust-lang/crates.io-index)",
+ "joker 0.0.5 (registry+https://github.com/rust-lang/crates.io-index)",
+ "serde 0.7.15 (registry+https://github.com/rust-lang/crates.io-index)",
+ "serde_json 0.7.4 (registry+https://github.com/rust-lang/crates.io-index)",
+ "unjson 0.0.5 (registry+https://github.com/rust-lang/crates.io-index)",
+]
+
+[[package]]
+name = "estree"
+version = "0.0.5"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+dependencies = [
+ "easter 0.0.5 (registry+https://github.com/rust-lang/crates.io-index)",
+ "joker 0.0.5 (registry+https://github.com/rust-lang/crates.io-index)",
+ "serde 0.7.15 (registry+https://github.com/rust-lang/crates.io-index)",
+ "serde_json 0.7.4 (registry+https://github.com/rust-lang/crates.io-index)",
+ "unjson 0.0.5 (registry+https://github.com/rust-lang/crates.io-index)",
+]
+
+[[package]]
+name = "itoa"
+version = "0.1.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+
+[[package]]
+name = "joker"
+version = "0.0.5"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+dependencies = [
+ "serde_json 0.7.4 (registry+https://github.com/rust-lang/crates.io-index)",
+ "unjson 0.0.5 (registry+https://github.com/rust-lang/crates.io-index)",
+]
+
+[[package]]
+name = "jsc"
+version = "0.1.0"
+dependencies = [
+ "esprit 0.0.5 (registry+https://github.com/rust-lang/crates.io-index)",
+]
+
+[[package]]
+name = "num-traits"
+version = "0.1.43"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+dependencies = [
+ "num-traits 0.2.4 (registry+https://github.com/rust-lang/crates.io-index)",
+]
+
+[[package]]
+name = "num-traits"
+version = "0.2.4"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+
+[[package]]
+name = "serde"
+version = "0.7.15"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+
+[[package]]
+name = "serde_json"
+version = "0.7.4"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+dependencies = [
+ "itoa 0.1.1 (registry+https://github.com/rust-lang/crates.io-index)",
+ "num-traits 0.1.43 (registry+https://github.com/rust-lang/crates.io-index)",
+ "serde 0.7.15 (registry+https://github.com/rust-lang/crates.io-index)",
+]
+
+[[package]]
+name = "unjson"
+version = "0.0.5"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+dependencies = [
+ "serde_json 0.7.4 (registry+https://github.com/rust-lang/crates.io-index)",
+]
+
+[metadata]
+"checksum easter 0.0.5 (registry+https://github.com/rust-lang/crates.io-index)" = "b3793ff2800423f2e1c1dafec7e88442395104fe8c56af792000be6b40d4ee38"
+"checksum esprit 0.0.5 (registry+https://github.com/rust-lang/crates.io-index)" = "14933b1674f3aca34790f3867aba4a34e4476029e7b29d3bc9c9c4a3b3591207"
+"checksum estree 0.0.5 (registry+https://github.com/rust-lang/crates.io-index)" = "bc6e86a81b6d4e9c5d23a015e99a66a8cfa40c80590a1e5dc3f885c8c3ba0b10"
+"checksum itoa 0.1.1 (registry+https://github.com/rust-lang/crates.io-index)" = "ae3088ea4baeceb0284ee9eea42f591226e6beaecf65373e41b38d95a1b8e7a1"
+"checksum joker 0.0.5 (registry+https://github.com/rust-lang/crates.io-index)" = "8df9d26d5d26564c6644a0d83fe16b495b650ae6cabc323896467a413bc52048"
+"checksum num-traits 0.1.43 (registry+https://github.com/rust-lang/crates.io-index)" = "92e5113e9fd4cc14ded8e499429f396a20f98c772a47cc8622a736e1ec843c31"
+"checksum num-traits 0.2.4 (registry+https://github.com/rust-lang/crates.io-index)" = "775393e285254d2f5004596d69bb8bc1149754570dcc08cf30cabeba67955e28"
+"checksum serde 0.7.15 (registry+https://github.com/rust-lang/crates.io-index)" = "1b0e0732aa8ec4267f61815a396a942ba3525062e3bd5520aa8419927cfc0a92"
+"checksum serde_json 0.7.4 (registry+https://github.com/rust-lang/crates.io-index)" = "b22e8a0554f31cb0f501e027de07b253553b308124f61c57598b9678dba35c0b"
+"checksum unjson 0.0.5 (registry+https://github.com/rust-lang/crates.io-index)" = "d2252aac46cca9516c8e2b2299ecae6c64ca55039cee3f9e5420f814c5d587c7"
