@@ -49,6 +49,7 @@ dependencies = [
 name = "jsc"
 version = "0.1.0"
 dependencies = [
+ "easter 0.0.5 (registry+https://github.com/rust-lang/crates.io-index)",
  "esprit 0.0.5 (registry+https://github.com/rust-lang/crates.io-index)",
 ]
 

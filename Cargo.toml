@@ -5,3 +5,4 @@ authors = ["Phil Eaton <philneaton95@gmail.com>"]
 
 [dependencies]
 esprit = "0.0.5"
+easter = "0.0.5"
