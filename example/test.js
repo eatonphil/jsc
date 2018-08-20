@@ -1,5 +1,3 @@
-function helloWorld() {
-  console.log("hey there");
+function main() {
+  printf("hey there");
 }
-
-helloWorld();

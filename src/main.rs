@@ -1,24 +1,84 @@
 use std::fs::File;
 use std::io::Read;
+use std::string::String;
 
 extern crate esprit;
 extern crate easter;
 
-fn generate_function_declaration(id: &easter::id::Id, params: &easter::fun::Params, body: &Vec<easter::stmt::StmtListItem>) {
-    println!("void {}(const FunctionCallbackInfo<Value>& args) {
-      Isolate* isolate = args.GetIsolate();");
+fn generate_function_declaration(id: &easter::id::Id, _: &easter::fun::Params, body: &Vec<easter::stmt::StmtListItem>) -> String {
+    let name: String = if id.is_some() {
+        id.name.as_ref().to_string()
+    } else {
+        "lambda".to_owned()
+    };
+    println!("void jsc_{}(const FunctionCallbackInfo<Value>& args) {{
+      Isolate* isolate = args.GetIsolate();", name);
 
-    println!("}");
+    generate(body);
+
+    println!("}}");
+
+    name
+}
+
+fn generate_call(expression: &easter::expr::Expr, args: &Vec<easter::expr::Expr>) -> String {
+    let fn_name = generate_expression(expression);
+    println!("Local<Function> cb = Local<Function>::Cast({});", fn_name);
+
+    let args_len = args.len();
+    let mut argv_items = Vec::with_capacity(args_len);
+    for (i, arg) in args.iter().enumerate() {
+        let arg_holder = generate_expression(arg);
+        println!("auto arg{} = {};", i, arg_holder);
+        argv_items.push(format!("arg{}", i));
+    }
+
+    println!("Local<Value> argv[argc] = {{ {} }};", argv_items.join(", "));
+    println!("cb->Call(Null(isolate), {}, argv);", args.len());
+
+    fn_name
+}
+
+fn generate_expression(expression: &easter::expr::Expr) -> String {
+    match expression {
+        &easter::expr::Expr::Call(_, ref name, ref args) => generate_call(name, args),
+        &easter::expr::Expr::Id(ref id) => id.name.as_ref().to_string(),
+        &easter::expr::Expr::String(_, ref string) => format!("String::NewFromUtf8(isolate, \"{}\")", string.value),
+        _ => panic!("found expr: {:#?}", expression),
+    }
 }
 
 fn generate_statement(statement: &easter::stmt::Stmt) {
-    println!("found stmt: {:#?}", statement);
+    match statement {
+        &easter::stmt::Stmt::Expr(_, ref e, _) => { generate_expression(e); },
+        _ => panic!("found stmt: {:#?}", statement),
+    }
+}
+
+fn generate(ast: &Vec<easter::stmt::StmtListItem>) -> Vec<String> {
+    let mut exports = Vec::new();
+    for statement in ast.iter() {
+        match statement {
+            &easter::stmt::StmtListItem::Decl(easter::decl::Decl::Fun(easter::fun::Fun { ref id, ref params, ref body, .. })) =>
+                match id {
+                    &Some(ref id) => {
+                        let decl = generate_function_declaration(id, params, body);
+                        exports.push(decl)
+                    },
+                    _ => panic!("anonymous function declarations not supported"),
+                },
+            &easter::stmt::StmtListItem::Stmt(ref s) =>
+                generate_statement(s)
+        }
+    }
+
+    exports
 }
 
 fn generate_prefix() {
     println!("#include <node.h>
 
-namespace demo {
+namespace demo {{
 
 using v8::Exception;
 using v8::FunctionCallbackInfo;
@@ -27,23 +87,25 @@ using v8::Local;
 using v8::Number;
 using v8::Object;
 using v8::String;
-using v8::Value;");
+using v8::Value;
+
+void print(const FunctionCallbackInfo<Value>& args) {{
+  cout << args[0]->ToString();
+}}");
 }
 
-fn generate_code(ast: Vec<easter::stmt::StmtListItem>) {
-    generate_prefix();
+fn generate_postfix(exports: Vec<String>) {
+    println!("void Init(Local<Object> exports, Local<Object> module) {{");
 
-    for statement in ast.iter() {
-        match statement {
-            &easter::stmt::StmtListItem::Decl(easter::decl::Decl::Fun(easter::fun::Fun { ref id, ref params, ref body, .. })) =>
-                match id {
-                    &Some(ref id) => generate_function_declaration(id, params, body),
-                    _ => panic!("anonymous function declarations not supported"),
-                },
-            &easter::stmt::StmtListItem::Stmt(ref s) =>
-                generate_statement(s),
-        }
+    for export in exports.iter() {
+        println!("\tNODE_SET_METHOD(module, \"exports\", {});", export);
     }
+
+    println!("}}
+
+NODE_MODULE(NODE_GYP_MODULE_NAME, Init)
+
+}}");
 }
 
 fn main() {
@@ -53,5 +115,7 @@ fn main() {
 
     let easter::prog::Script { body: ast, .. } = esprit::script(contents.as_str()).expect("parsing error");
 
-    generate_code(ast);
+    generate_prefix();
+    let exports = generate(&ast);
+    generate_postfix(exports);
 }
