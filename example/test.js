@@ -1,3 +1,3 @@
 function main() {
-  printf("hey there");
+  jsc_printf("hey there");
 }
