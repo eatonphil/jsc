@@ -1,4 +1,4 @@
-# jsc: Cython for Node
+# Javascript compiler targeting C++/V8
 
 The following:
 
