@@ -1,5 +1,5 @@
 use std::fs::File;
-use std::io::Read;
+use std::io::prelude::*;
 use std::string::String;
 
 extern crate esprit;
@@ -8,7 +8,7 @@ extern crate easter;
 mod jsc {
     pub struct Compiler {
         output_file: File,
-    };
+    }
 
     impl Compiler {
         fn writeln(&self, depth: i32, output: String) {
@@ -30,7 +30,8 @@ mod jsc {
             } else {
                 "lambda".to_owned()
             };
-            self.writeln(depth, format!("void jsc_{}(const FunctionCallbackInfo<Value>& args) {{"));
+
+            self.writeln(depth, format!("void jsc_{}(const FunctionCallbackInfo<Value>& args) {{", name));
             self.writeln(depth + 1, "Isolate* isolate = args.GetIsolate();");
 
             self.generate_statements(depth + 1, body);
@@ -135,13 +136,13 @@ mod jsc {
             self.generate_postfix(exports);
         }
 
-        pub fn new(output_directory: str, module_name: str) -> Compiler {
+        pub fn new(output_directory: static str, module_name: static str) -> Compiler {
             let error = format!("Unable to create {}/{}.cc",
                                 output_directory,
                                 module_name);
 
             Compiler {
-                output_file: File::create(output_directory).expect(error);
+                output_file: File::create(output_directory).expect(error)
             }
         }
     }
@@ -149,15 +150,16 @@ mod jsc {
 
 fn main() {
     let args: Vec<String> = env::args().collect();
-    let mut f = File::open(args[0]).expect(format!("{} not found", args[0]));
+    let mut f = File::open(args[0]).expect(format!("{} not found", args[0]).as_str());
     let mut contents = String::new();
     f.read_to_string(&mut contents).expect("error reading input");
 
     let easter::prog::Script { body: ast, .. } = esprit::script(contents.as_str()).expect("error parsing input");
 
     let compiler = jsc::Compiler::new("cout", "module");
-    compiler.generate();
+    compiler.generate_code();
 
-    let mut file = File::create("main.js").expect("error creating js entry");
-    file.write_all(format!("require(\"./build/Release/test\").main();\n")).expect("error writing js entry");
+    let js_entry = File::create("main.js").expect("error creating js entry");
+    let js_program = format!("require(\"./build/Release/test\").main();\n").as_bytes();
+    js_entry.write_all(js_program).expect("error writing js entry");
 }
