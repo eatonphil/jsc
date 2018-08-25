@@ -1,8 +1,10 @@
 #!/usr/bin/env bash
 
+set -e
+
 cargo build
-./target/debug/jsc > cout/test.cc
-cd cout
+RUST_BACKTRACE=1 ./target/debug/jsc $1 tout
+cd tout
 node-gyp configure
 node-gyp build
-node entry.js
+node main.js

@@ -1,12 +1,12 @@
-extern crate easter;
-
 use std::fs::File;
 use std::io::Write;
 use std::iter;
 
+extern crate easter;
+
 pub struct CG {
     ast: easter::prog::Script,
-    output_file: File,
+    output_file: Box<File>,
 }
 
 impl CG {
@@ -14,7 +14,8 @@ impl CG {
         let indent = 2; // spaces
         let indents = iter::repeat(" ").take(depth * indent).collect::<String>();
         let line = format!("{}{}\n", indents, output.into());
-        self.output_file.write_all(line.as_bytes()).expect("failed to write")
+        let mut f = &*(self.output_file);
+        f.write_all(line.as_bytes()).expect("failed to write")
     }
 
     fn generate_function_declaration(
@@ -24,23 +25,25 @@ impl CG {
         _: &easter::fun::Params,
         body: &Vec<easter::stmt::StmtListItem>
     ) -> String {
-        let name: String = if id.is_some() {
-            id.name.as_ref().to_string()
+        let name = if id.is_some() {
+            id.name.as_ref()
         } else {
-            "lambda".to_owned()
+            "lambda"
         };
 
-        self.writeln(depth, format!("void jsc_{}(const FunctionCallbackInfo<Value>& args) {{", name));
+        let full_name = format!("jsc_{}", name);
+
+        self.writeln(depth, format!("void {}(const FunctionCallbackInfo<Value>& args) {{", full_name));
         self.writeln(depth + 1, "Isolate* isolate = args.GetIsolate();");
 
         self.generate_statements(depth + 1, body);
 
         self.writeln(depth, "}\n");
 
-        format!("jsc_{}", name)
+        full_name
     }
 
-    fn generate_call(&self, depth: usize, expression: &easter::expr::Expr, args: &Vec<easter::expr::Expr>) -> String {
+    fn generate_call<'a>(&self, depth: usize, expression: &easter::expr::Expr, args: &Vec<easter<>::expr::Expr>) -> String {
         let fn_name = self.generate_expression(depth, expression);
         self.writeln(depth, format!("Local<FunctionTemplate> tpl_{} = FunctionTemplate::New(isolate, {});", fn_name, fn_name));
         self.writeln(depth, format!("Local<Function> fn_{} = tpl_{}->GetFunction();", fn_name, fn_name));
@@ -65,7 +68,7 @@ impl CG {
             &easter::expr::Expr::Call(_, ref name, ref args) => self.generate_call(depth, name, args),
             &easter::expr::Expr::Id(ref id) => id.name.as_ref().to_string(),
             &easter::expr::Expr::String(_, ref string) => format!("String::NewFromUtf8(isolate, \"{}\")", string.value),
-            _ => panic!("found expr: {:#?}", expression),
+            _ => panic!("Got expression: {:#?}", expression),
         }
     }
 
@@ -100,48 +103,48 @@ impl CG {
         self.writeln(0, "#include <iostream>\n");
         self.writeln(0, "#include <node.h>\n");
 
-        self.writeln(1, "using v8::Exception");
-        self.writeln(1, "using v8::Function");
-        self.writeln(1, "using v8::FunctionTemplate");
-        self.writeln(1, "using v8::FunctionCallbackInfo");
-        self.writeln(1, "using v8::Isolate");
-        self.writeln(1, "using v8::Local");
-        self.writeln(1, "using v8::Number");
-        self.writeln(1, "using v8::Object");
-        self.writeln(1, "using v8::String");
-        self.writeln(1, "using v8::Value");
+        self.writeln(0, "using v8::Exception;");
+        self.writeln(0, "using v8::Function;");
+        self.writeln(0, "using v8::FunctionTemplate;");
+        self.writeln(0, "using v8::FunctionCallbackInfo;");
+        self.writeln(0, "using v8::Isolate;");
+        self.writeln(0, "using v8::Local;");
+        self.writeln(0, "using v8::Number;");
+        self.writeln(0, "using v8::Object;");
+        self.writeln(0, "using v8::String;");
+        self.writeln(0, "using v8::Value;\n");
 
-        self.writeln(1, "void jsc_printf(const FunctionCallbackInfo<Value>& args) {");
-        self.writeln(2, "String::Utf8Value s(args[0]->ToString())");
-        self.writeln(2, "std::string cs = std::string(*s)");
-        self.writeln(2, "std::cout << cs");
-        self.writeln(1, "}");
+        self.writeln(0, "void jsc_printf(const FunctionCallbackInfo<Value>& args) {");
+        self.writeln(1, "String::Utf8Value s(args[0]->ToString());");
+        self.writeln(1, "std::string cs = std::string(*s);");
+        self.writeln(1, "std::cout << cs;");
+        self.writeln(0, "}\n");
     }
 
-    fn generate_postfix(&self, exports: Vec<String>) {
-        self.writeln(1, "void Init(Local<Object> exports) {");
+    fn generate_postfix(&self, depth: usize, exports: Vec<String>) {
+        self.writeln(depth, "void Init(Local<Object> exports) {");
 
         for export in exports.iter() {
-            self.writeln(2, format!("NODE_SET_METHOD(exports, \"{}\", {});", export, export));
+            self.writeln(depth + 1, format!("NODE_SET_METHOD(exports, \"{}\", {});", export, export));
         }
 
-        self.writeln(1, "}\n");
-        self.writeln(1, "NODE_MODULE(NODE_GYP_MODULE_NAME, Init))\n");
+        self.writeln(depth, "}\n");
+        self.writeln(depth, "NODE_MODULE(NODE_GYP_MODULE_NAME, Init)");
     }
 
     pub fn generate(&self) {
         self.generate_prefix();
-        let exports = self.generate_statements(1, &self.ast.body);
-        self.generate_postfix(exports);
+        let exports = self.generate_statements(0, &self.ast.body);
+        self.generate_postfix(0, exports);
     }
 
     pub fn new<S>(ast: easter::prog::Script, output_directory: S, module_name: S) -> CG where S: Into<String> {
         let path = format!("{}/{}.cc", output_directory.into(), module_name.into());
-        let error = format!("Unable to create {}", path).as_str();
+        let error = format!("Unable to create {}", path);
 
         CG {
             ast,
-            output_file: File::create(path).expect(error)
+            output_file: Box::new(File::create(path).expect(error.as_str()))
         }
     }
 }
