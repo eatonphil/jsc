@@ -2,9 +2,11 @@
 
 set -e
 
+readonly out_dir=build
+
 cargo build
-RUST_BACKTRACE=1 ./target/debug/jsc $1 tout
-cd tout
+RUST_BACKTRACE=1 ./target/debug/jsc $1 $out_dir
+cd $out_dir
 node-gyp configure
 node-gyp build
 node *.js
