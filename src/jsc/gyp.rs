@@ -25,7 +25,6 @@ pub fn generate_binding<S>(dir_s: S, modules: Vec<String>) where S: Into<String>
     };
 
     let binding_json = serde_json::to_string_pretty(&binding).expect("Error creating binding json");;
-    println!("json: {:?}", binding);
 
     let file = format!("{}/binding.gyp", dir);
     let mut file = File::create(file).expect("Error creating binding.gyp");
