@@ -7,4 +7,4 @@ RUST_BACKTRACE=1 ./target/debug/jsc $1 tout
 cd tout
 node-gyp configure
 node-gyp build
-node main.js
+node *.js
