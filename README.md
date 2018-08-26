@@ -91,3 +91,10 @@ NODE_MODULE(NODE_GYP_MODULE_NAME, Init)
 ```
 
 By running `./build.sh examples/recursion.js`.
+
+### Todo
+
+* [ ] Replace Node entry with C++/V8 entry
+* [ ] Replace jsc_printf with console.log
+* [ ] Track/map locals in a scope dictionary
+* [ ] Replace binop calls with in-line code

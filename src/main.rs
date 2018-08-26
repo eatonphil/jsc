@@ -1,33 +1,51 @@
 #[macro_use]
 extern crate serde_derive;
 
+extern crate clap;
 extern crate easter;
 extern crate esprit;
 
-use std::env;
 use std::fs;
 use std::path::Path;
 
 mod jsc;
 
 fn main() {
-    let mut args = env::args();
-    let source_entry = args.nth(1).expect("Expected file argument");
-    let entry_module = Path::new(source_entry.as_str()).file_stem().unwrap().to_str().unwrap();
-    let output_directory = args.nth(0).expect("Expected output directory argument");
+    let args = clap::App::new("jsc")
+        .version("0.1.0")
+        .arg(clap::Arg::with_name("entry")
+             .required(true))
+        .arg(clap::Arg::with_name("out_dir")
+             .required(true))
+        .group(clap::ArgGroup::with_name("target")
+               .args(&["node-lib", "node-program", "standalone"]))
+        .get_matches();
 
-    let ast = jsc::parser::from_file(source_entry.as_str());
+    let source_entry: String = args.value_of("entry").unwrap().to_string();
+    let output_directory: String = args.value_of("out_dir").unwrap().to_string();
+    let target: String = args.value_of("target").unwrap().to_string();
 
     if fs::metadata(output_directory.as_str()).is_ok() {
         fs::remove_dir_all(output_directory.as_str()).expect("Unable to remove output directory");
     }
     fs::create_dir_all(output_directory.as_str()).expect("Unable to create output directory");
-    
-    let mut cg = jsc::cg::CG::new(ast, output_directory.as_str(), entry_module);
+
+    let entry_module = Path::new(source_entry.as_str()).file_stem().unwrap().to_str().unwrap();
+    let ast = jsc::parser::from_file(source_entry.as_str());
+    let mut cg = jsc::cg::CG::new(ast, output_directory.as_str(), entry_module, target != "standalone");
     cg.generate();
 
-    jsc::entry::generate(output_directory.as_str(), entry_module);
-
     let modules = vec![entry_module.to_string()];
-    jsc::gyp::generate_binding(output_directory.as_str(), modules);
+    jsc::gyp::generate_binding(output_directory.as_str(), modules.clone());
+
+    match target.as_str() {
+        "node-program" => {
+            jsc::build::generate_node_entry(output_directory.as_str(), entry_module);
+            jsc::build::build_node(output_directory.as_str());
+        },
+        "standalone" => {
+            jsc::build::build_standalone(output_directory.as_str(), modules.clone());
+        },
+        _ => jsc::build::build_node(output_directory.as_str())
+    }
 }

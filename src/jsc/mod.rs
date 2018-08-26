@@ -1,4 +1,4 @@
-pub mod parser;
+pub mod build;
 pub mod cg;
-pub mod entry;
 pub mod gyp;
+pub mod parser;

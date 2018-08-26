@@ -9,6 +9,7 @@ pub struct CG {
     output_file: File,
     tmp_count: u64,
     tmps: Vec<String>,
+    use_node: bool
 }
 
 impl CG {
@@ -301,8 +302,18 @@ impl CG {
     }
 
     fn generate_prefix(&mut self) {
-        self.writeln(0, "#include <iostream>\n");
-        self.writeln(0, "#include <node.h>\n");
+        self.writeln(0, "#include <iostream>");
+
+        if self.use_node {
+            self.writeln(0, "\n#include <node.h>\n");
+        } else {
+            self.writeln(0, "#include <stdio.h>");
+            self.writeln(0, "#include <stdlib.h>");
+            self.writeln(0, "#include <string.h>\n");
+
+            self.writeln(0, "#include <libplatform.h>");
+            self.writeln(0, "#include <v8.h>\n");
+        }
 
         self.writeln(0, "using v8::Context;");
         self.writeln(0, "using v8::Exception;");
@@ -364,11 +375,57 @@ void jsc_printf(const FunctionCallbackInfo<Value>& args) {
 ");
     }
 
-    fn generate_postfix(&mut self, depth: usize) {
-        self.writeln(depth, "void Init(Local<Object> exports) {");
-        self.writeln(depth + 1, "NODE_SET_METHOD(exports, \"jsc_main\", jsc_main);");
-        self.writeln(depth, "}\n");
-        self.writeln(depth, "NODE_MODULE(NODE_GYP_MODULE_NAME, Init)");
+    fn generate_postfix(&mut self) {
+        if self.use_node {
+            self.writeln(0, "void Init(Local<Object> exports) {");
+            self.writeln(1, "NODE_SET_METHOD(exports, \"jsc_main\", jsc_main);");
+            self.writeln(0, "}\n");
+            self.writeln(0, "NODE_MODULE(NODE_GYP_MODULE_NAME, Init)");
+        } else {
+            self.writeln(0, "
+int main(int argc, char* argv[]) {
+  int exit_code;
+  
+  // Initialize V8.
+  v8::V8::InitializeICUDefaultLocation(argv[0]);
+  v8::V8::InitializeExternalStartupData(argv[0]);
+  std::unique_ptr<v8::Platform> platform = v8::platform::NewDefaultPlatform();
+  v8::V8::InitializePlatform(platform.get());
+  v8::V8::Initialize();
+  
+  // Create a new Isolate and make it the current one.
+  v8::Isolate::CreateParams create_params;
+  create_params.array_buffer_allocator =
+      v8::ArrayBuffer::Allocator::NewDefaultAllocator();
+  v8::Isolate* isolate = v8::Isolate::New(create_params);
+  
+  {
+    v8::Isolate::Scope isolate_scope(isolate);
+    // Create a stack-allocated handle scope.
+    v8::HandleScope handle_scope(isolate);
+    // Create a new context.
+    v8::Local<v8::Context> context = v8::Context::New(isolate);
+    // Enter the context for compiling and running the hello world script.
+    v8::Context::Scope context_scope(context);
+
+    {
+      Local<FunctionTemplate> entry_fntpl = FunctionTemplate::New(isolate, __jsc_main);
+      Local<Function> entry_fn = entry_fntpl->GetFunction();
+
+      // TODO: pass args
+      Local<Value> result = entry_fn->Call(Null(isolate), 0, 0);
+      exit_code = result->ToNumber(isolate)->Value();
+    }
+  }
+  
+  isolate->Dispose();
+  v8::V8::Dispose();
+  v8::V8::ShutdownPlatform();
+  delete create_params.array_buffer_allocator;
+  return exit_code;
+}
+");
+        }
     }
 
     pub fn generate(&mut self) {
@@ -382,14 +439,20 @@ void jsc_printf(const FunctionCallbackInfo<Value>& args) {
         }
 
         self.generate_statements(0, &body);
-        self.generate_postfix(0);
+        self.generate_postfix();
     }
 
-    pub fn new<S>(ast: easter::prog::Script, output_directory: S, module_name: S) -> CG where S: Into<String> {
+    pub fn new<S>(
+        ast: easter::prog::Script,
+        output_directory: S,
+        module_name: S,
+        use_node: bool
+    ) -> CG where S: Into<String> {
         let path = format!("{}/{}.cc", output_directory.into(), module_name.into());
         let error = format!("Unable to create {}", path);
 
         CG {
+            use_node,
             ast,
             output_file: File::create(path).expect(error.as_str()),
             tmp_count: 0,
