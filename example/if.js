@@ -1,7 +1,7 @@
 function main() {
   if (0) {
-    jsc_printf("ok");
+    console.log("ok");
   } else {
-    jsc_printf("nok");
+    console.log("nok");
   }
 }

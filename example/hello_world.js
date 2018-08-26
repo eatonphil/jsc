@@ -1,3 +1,3 @@
 function main() {
-  jsc_printf("hey there");
+  console.log("hey there");
 }

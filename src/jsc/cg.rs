@@ -9,7 +9,8 @@ pub struct CG {
     output_file: File,
     tmp_count: u64,
     tmps: Vec<String>,
-    use_node: bool
+    use_node: bool,
+    generated_funcs: Vec<String>
 }
 
 impl CG {
@@ -47,6 +48,7 @@ impl CG {
             if id == "main" {
                 "jsc_main"
             } else {
+                self.generated_funcs.push(id.to_string());
                 id
             }
         } else {
@@ -79,11 +81,8 @@ impl CG {
         &mut self,
         depth: usize,
         fn_tmp: String,
-        id: String,
         args: Vec<String>
     ) -> String {
-        self.writeln(depth, format!("{}->SetName(String::NewFromUtf8(isolate, \"{}\"));", fn_tmp, id));
-
         let argv_tmp = self.generate_tmp("argv");
         self.writeln(depth, format!("Local<Value> {}[] = {{ {} }};", argv_tmp, args.join(", ")));
 
@@ -114,14 +113,20 @@ impl CG {
             argv_items.push(tmp);
         }
 
-        let ftpl_tmp = self.generate_tmp("ftpl");
         let fn_tmp = self.generate_tmp("fn");
-        self.writeln(depth, format!("Local<FunctionTemplate> {} = FunctionTemplate::New(isolate, {});",
-                                    ftpl_tmp,
-                                    fn_name));
-        self.writeln(depth, format!("Local<Function> {} = {}->GetFunction();", fn_tmp, ftpl_tmp));
+        // Should check only within this scope?
+        if self.generated_funcs.contains(&fn_name) {
+            let ftpl_tmp = self.generate_tmp("ftpl");
+            self.writeln(depth, format!("Local<FunctionTemplate> {} = FunctionTemplate::New(isolate, {});",
+                                        ftpl_tmp,
+                                        fn_name));
+            self.writeln(depth, format!("Local<Function> {} = {}->GetFunction();", fn_tmp, ftpl_tmp));
+            self.writeln(depth, format!("{}->SetName(String::NewFromUtf8(isolate, \"{}\"));", fn_tmp, fn_name));
+        } else {
+            self.writeln(depth, format!("Local<Function> {} = Local<Function>::Cast({});", fn_tmp, fn_name));
+        }
 
-        self.generate_call_internal(depth, fn_tmp, fn_name, argv_items)
+        self.generate_call_internal(depth, fn_tmp, argv_items)
     }
 
     fn generate_binop(
@@ -157,7 +162,20 @@ impl CG {
             easter::punc::BinopTag::Instanceof => "instanceof",
         };
 
+        // TODO: replace with inline generation
         format!("{}(isolate, {}, {})", op, left, right)
+    }
+
+    fn generate_dot(
+        &mut self,
+        depth: usize,
+        object: &easter::expr::Expr,
+        accessor: &easter::obj::DotKey
+    ) -> String {
+        let exp = self.generate_expression(depth, object);
+        format!("Local<Object>::Cast({})->Get(String::NewFromUtf8(isolate, \"{}\"))",
+                exp,
+                accessor.value)
     }
 
     fn generate_expression(&mut self, depth: usize, expression: &easter::expr::Expr) -> String {
@@ -165,7 +183,10 @@ impl CG {
             &easter::expr::Expr::Call(_, ref name, ref args) =>
                 self.generate_call(depth, name, args),
             &easter::expr::Expr::Id(ref id) =>
-                id.name.as_ref().to_string(),
+                match id.name.as_ref() {
+                    "console" => "isolate->GetCurrentContext()->Global()->Get(String::NewFromUtf8(isolate, \"console\"))",
+                    other => other
+                }.to_string(),
             &easter::expr::Expr::String(_, ref string) =>
                 format!("String::NewFromUtf8(isolate, \"{}\")",
                         string.value
@@ -176,6 +197,8 @@ impl CG {
                 format!("Number::New(isolate, {})", number.value),
             &easter::expr::Expr::Binop(_, ref op, ref exp1, ref exp2) =>
                 self.generate_binop(depth, op, exp1, exp2),
+            &easter::expr::Expr::Dot(_, ref object, ref accessor) =>
+                self.generate_dot(depth, object, accessor),
             _ =>
                 panic!("Got expression: {:#?}", expression),
         }
@@ -239,7 +262,6 @@ impl CG {
         let result = self.generate_call_internal(
             depth,
             boolean_tmp,
-            "Boolean".to_string(),
             vec![test_result]);
 
         self.writeln(depth, format!("if ({}->ToBoolean()->Value()) {{", result));
@@ -366,12 +388,6 @@ Local<Value> jsc_minus(Isolate* isolate, Local<Value> a, Local<Value> b) {
 
   return result;
 }
-
-void jsc_printf(const FunctionCallbackInfo<Value>& args) {
-  String::Utf8Value s(args[0]->ToString());
-  std::string cs = std::string(*s);
-  std::cout << cs;
-}
 ");
     }
 
@@ -456,7 +472,8 @@ int main(int argc, char* argv[]) {
             ast,
             output_file: File::create(path).expect(error.as_str()),
             tmp_count: 0,
-            tmps: Vec::new()
+            tmps: Vec::new(),
+            generated_funcs: Vec::new()
         }
     }
 }

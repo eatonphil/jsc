@@ -7,7 +7,15 @@ fn exec<S>(dir: String, program_s: S, args: Vec<String>) where S: Into<String> {
     match Command::new(program.clone()).args(args.clone()).current_dir(dir).output() {
         Err (e) =>
             panic!("Error calling:\n\"{} {:?}\"\n\nGot:\n{}\n", program, args, e),
-        _ => ()
+        Ok (output) => {
+            if !output.status.success() {
+                panic!("Error calling:\n\"{} {:?}\"\n\nGot:\n{}\n{}\n",
+                       program,
+                       args,
+                       String::from_utf8_lossy(&output.stdout),
+                       String::from_utf8_lossy(&output.stderr))
+            }
+        }
     }
 }
 pub fn generate_node_entry<S>(dir_s: S, module_s: S) where S: Into<String> {

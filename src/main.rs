@@ -14,11 +14,17 @@ fn main() {
     let args = clap::App::new("jsc")
         .version("0.1.0")
         .arg(clap::Arg::with_name("entry")
+             .long("entry")
+             .takes_value(true)
              .required(true))
         .arg(clap::Arg::with_name("out_dir")
+             .long("out_dir")
+             .takes_value(true)
              .required(true))
-        .group(clap::ArgGroup::with_name("target")
-               .args(&["node-lib", "node-program", "standalone"]))
+        .arg(clap::Arg::with_name("target")
+             .long("target")
+             .takes_value(true)
+             .possible_values(&["node-lib", "node-program", "standalone"]))
         .get_matches();
 
     let source_entry: String = args.value_of("entry").unwrap().to_string();
@@ -36,16 +42,18 @@ fn main() {
     cg.generate();
 
     let modules = vec![entry_module.to_string()];
-    jsc::gyp::generate_binding(output_directory.as_str(), modules.clone());
 
     match target.as_str() {
-        "node-program" => {
-            jsc::build::generate_node_entry(output_directory.as_str(), entry_module);
+        "standalone" =>
+            jsc::build::build_standalone(output_directory.as_str(), modules.clone()),
+        _ => {
+            jsc::gyp::generate_binding(output_directory.as_str(), modules.clone());
+
+            if target == "node-program" {
+                jsc::build::generate_node_entry(output_directory.as_str(), entry_module);
+            }
+
             jsc::build::build_node(output_directory.as_str());
         },
-        "standalone" => {
-            jsc::build::build_standalone(output_directory.as_str(), modules.clone());
-        },
-        _ => jsc::build::build_node(output_directory.as_str())
     }
 }

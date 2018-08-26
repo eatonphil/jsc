@@ -3,5 +3,5 @@ function test() {
 }
 
 function main() {
-  jsc_printf(test());
+  console.log(test());
 }

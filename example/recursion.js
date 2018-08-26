@@ -7,5 +7,5 @@ function fib(i) {
 }
 
 function main() {
-  jsc_printf(fib(20));
+  console.log(fib(20));
 }
