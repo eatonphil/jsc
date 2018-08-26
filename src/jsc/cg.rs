@@ -42,7 +42,12 @@ impl CG {
         body: &Vec<easter::stmt::StmtListItem>
     ) {
         let name = if id.is_some() {
-            id.name.as_ref()
+            let id = id.name.as_ref();
+            if id == "main" {
+                "jsc_main"
+            } else {
+                id
+            }
         } else {
             "lambda"
         };
@@ -55,26 +60,17 @@ impl CG {
         self.writeln(depth, "}\n");
     }
 
-    fn generate_call<'a>(&mut self, depth: usize, expression: &easter::expr::Expr, args: &Vec<easter<>::expr::Expr>) -> String {
-        let fn_name = self.generate_expression(depth, expression);
-
-        let ftpl_tmp = self.generate_tmp("ftpl");
-        let fn_tmp = self.generate_tmp("fn");
-        self.writeln(depth, format!("Local<FunctionTemplate> {} = FunctionTemplate::New(isolate, {});", ftpl_tmp, fn_name));
-        self.writeln(depth, format!("Local<Function> {} = {}->GetFunction();", fn_tmp, ftpl_tmp));
-        self.writeln(depth, format!("{}->SetName(String::NewFromUtf8(isolate, \"{}\"));", fn_tmp, fn_name));
-
-        let args_len = args.len();
-        let mut argv_items = Vec::with_capacity(args_len);
-        for arg in args.iter() {
-            let arg_holder = self.generate_expression(depth, arg);
-            let tmp = self.generate_tmp("arg");
-            self.writeln(depth, format!("auto {} = {};", tmp, arg_holder));
-            argv_items.push(tmp);
-        }
+    fn generate_call_internal(
+        &mut self,
+        depth: usize,
+        fn_tmp: String,
+        id: String,
+        args: Vec<String>
+    ) -> String {
+        self.writeln(depth, format!("{}->SetName(String::NewFromUtf8(isolate, \"{}\"));", fn_tmp, id));
 
         let argv_tmp = self.generate_tmp("argv");
-        self.writeln(depth, format!("Local<Value> {}[] = {{ {} }};", argv_tmp, argv_items.join(", ")));
+        self.writeln(depth, format!("Local<Value> {}[] = {{ {} }};", argv_tmp, args.join(", ")));
 
         let result_tmp = self.generate_tmp("result");
         self.writeln(depth, format!("Local<Value> {} = {}->Call(Null(isolate), {}, {});",
@@ -83,7 +79,34 @@ impl CG {
                                     args.len(),
                                     argv_tmp));
 
-        result_tmp
+        result_tmp        
+    }
+
+    fn generate_call(
+        &mut self,
+        depth: usize,
+        expression: &easter::expr::Expr,
+        args: &Vec<easter<>::expr::Expr>
+    ) -> String {
+        let fn_name = self.generate_expression(depth, expression);
+
+        let args_len = args.len();
+        let mut argv_items = Vec::with_capacity(args_len);
+        for arg in args.iter() {
+            let arg_holder = self.generate_expression(depth, arg);
+            let tmp = self.generate_tmp("arg");
+            self.writeln(depth, format!("Local<Value> {} = {};", tmp, arg_holder));
+            argv_items.push(tmp);
+        }
+
+        let ftpl_tmp = self.generate_tmp("ftpl");
+        let fn_tmp = self.generate_tmp("fn");
+        self.writeln(depth, format!("Local<FunctionTemplate> {} = FunctionTemplate::New(isolate, {});",
+                                    ftpl_tmp,
+                                    fn_name));
+        self.writeln(depth, format!("Local<Function> {} = {}->GetFunction();", fn_tmp, ftpl_tmp));
+
+        self.generate_call_internal(depth, fn_tmp, fn_name, argv_items)
     }
 
     fn generate_binop(
@@ -143,7 +166,12 @@ impl CG {
         }
     }
 
-    fn generate_declaration(&mut self, depth: usize, id: &easter::id::Id, expression: &Option<easter::expr::Expr>) {
+    fn generate_declaration(
+        &mut self,
+        depth: usize,
+        id: &easter::id::Id,
+        expression: &Option<easter::expr::Expr>
+    ) {
         let suffix = match expression {
             &Some (ref exp) => {
                 let generated = self.generate_expression(depth, &exp);
@@ -172,23 +200,81 @@ impl CG {
         self.writeln(depth, format!("args.GetReturnValue().Set({});", result));
     }
 
-    fn generate_statement(&mut self, depth: usize, statement: &easter::stmt::Stmt) {
+    fn generate_condition(
+        &mut self,
+        depth: usize,
+        test: &easter::expr::Expr,
+        ok: &easter::stmt::Stmt,
+        nok: &Option<Box<easter::stmt::Stmt>>
+    ) {
+        let ctx_tmp = self.generate_tmp("ctx");
+        let global_tmp = self.generate_tmp("global");
+        let boolean_tmp = self.generate_tmp("Boolean");
+
+        self.writeln(depth, format!("Local<Context> {} = isolate->GetCurrentContext();",
+                                    ctx_tmp));
+        self.writeln(depth, format!("Local<Object> {} = {}->Global();",
+                                    global_tmp,
+                                    ctx_tmp));
+        self.writeln(depth, format!("Local<Function> {} = Local<Function>::Cast({}->Get(String::NewFromUtf8(isolate, \"Boolean\")));",
+                                    boolean_tmp,
+                                    global_tmp));
+
+        let test_result = self.generate_expression(depth, test);
+        let result = self.generate_call_internal(
+            depth,
+            boolean_tmp,
+            "Boolean".to_string(),
+            vec![test_result]);
+
+        self.writeln(depth, format!("if ({}->ToBoolean()->Value()) {{", result));
+        self.generate_statement(depth + 1, ok);
+
+        match nok {
+            &Some (ref stmt) => {
+                self.writeln(depth, "} else {");
+                self.generate_statement(depth + 1, stmt);
+            },
+            _ => ()
+        };
+
+        self.writeln(depth, "}");
+    }
+
+    fn generate_statement(
+        &mut self,
+        depth: usize,
+        statement: &easter::stmt::Stmt
+    ) {
         match statement {
-            &easter::stmt::Stmt::Expr(_, ref e, _) => { self.generate_expression(depth, e); },
+            &easter::stmt::Stmt::Expr(_, ref e, _) => {
+                self.generate_expression(depth, e);
+            },
             &easter::stmt::Stmt::Var(_, ref destructors, _) => {
                 for destructor in destructors {
                     self.generate_destructor(depth, destructor);
                 }
             },
-            &easter::stmt::Stmt::Return(_, ref result, _) => self.generate_return(depth, result),
+            &easter::stmt::Stmt::Return(_, ref result, _) =>
+                self.generate_return(depth, result),
+            &easter::stmt::Stmt::If(_, ref test, ref ok, ref nok) =>
+                self.generate_condition(depth, test, ok, nok),
+            &easter::stmt::Stmt::Block(_, ref statements) =>
+                self.generate_statements(depth, statements),
             _ => panic!("found stmt: {:#?}", statement),
         }
     }
 
-    pub fn generate_statements(&mut self, depth: usize, ast: &Vec<easter::stmt::StmtListItem>) {
+    pub fn generate_statements(
+        &mut self,
+        depth: usize,
+        ast: &Vec<easter::stmt::StmtListItem>
+    ) {
         for statement in ast.iter() {
             match statement {
-                &easter::stmt::StmtListItem::Decl(easter::decl::Decl::Fun(easter::fun::Fun { ref id, ref params, ref body, .. })) =>
+                &easter::stmt::StmtListItem::Decl(
+                    easter::decl::Decl::Fun(
+                        easter::fun::Fun { ref id, ref params, ref body, .. })) =>
                     match id {
                         &Some(ref id) => self.generate_function_declaration(depth, id, params, body),
                         _ => panic!("anonymous function declarations not supported")
@@ -203,12 +289,14 @@ impl CG {
         self.writeln(0, "#include <iostream>\n");
         self.writeln(0, "#include <node.h>\n");
 
+        self.writeln(0, "using v8::Context;");
         self.writeln(0, "using v8::Exception;");
         self.writeln(0, "using v8::Function;");
         self.writeln(0, "using v8::FunctionTemplate;");
         self.writeln(0, "using v8::FunctionCallbackInfo;");
         self.writeln(0, "using v8::Isolate;");
         self.writeln(0, "using v8::Local;");
+        self.writeln(0, "using v8::Null;");
         self.writeln(0, "using v8::Number;");
         self.writeln(0, "using v8::Object;");
         self.writeln(0, "using v8::String;");
