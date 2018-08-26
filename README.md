@@ -2,7 +2,7 @@
 
 The following:
 
-```
+```js
 function main() {
   var a = "hello ";
   var b = "world!\n";
@@ -13,7 +13,7 @@ function main() {
 
 Gets compiled to:
 
-```
+```cpp
 #include <iostream>
 
 #include <node.h>
