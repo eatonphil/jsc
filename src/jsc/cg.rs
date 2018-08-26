@@ -129,6 +129,83 @@ impl CG {
         self.generate_call_internal(depth, fn_tmp, argv_items)
     }
 
+    fn generate_number_op(
+        &mut self,
+        op: &str,
+        left: String,
+        right: String,
+    ) -> String {
+        let number_check = format!("{}->IsNumber() || {}->IsNumber()", left, right);
+        let number_case = format!("Number::New(isolate, {}->ToNumber(isolate)->Value() {} {}->ToNumber(isolate)->Value())", left, op, right);
+
+        // TODO: find NaN value
+        format!("({}) ? ({}) : Local<Number>::Cast(Null(isolate))",
+                number_check,
+                number_case)
+    }
+
+    fn generate_generic_op(
+        &mut self,
+        string_case: String,
+        number_op: &str,
+        left: String,
+        right: String,
+    ) -> String {
+        let string_check = format!("{}->IsString() || {}->IsString()", left, right);
+
+        format!("({}) ? Local<Value>::Cast({}) : Local<Value>::Cast({})",
+                string_check,
+                string_case,
+                self.generate_number_op(number_op, left, right))
+    }
+
+    fn generate_plus(
+        &mut self,
+        left: String,
+        right: String
+    ) -> String {
+        let string_case = format!("String::Concat({}->ToString(), {}->ToString())", left, right);
+        let number_op = "+";
+
+        self.generate_generic_op(string_case, number_op, left, right)
+    }
+
+    fn generate_minus(
+        &mut self,
+        left: String,
+        right: String
+    ) -> String {
+        self.generate_number_op("-", left, right)
+    }
+
+    // TODO: support non numbers
+    fn generate_leq(
+        &mut self,
+        left: String,
+        right: String
+    ) -> String {
+        self.generate_number_op("<=", left, right)
+    }
+
+    fn generate_eq(
+        &mut self,
+        left: String,
+        right: String
+    ) -> String {
+        let string_case = format!("{}->ToString()->Value() == {}->ToString()->Value()", left, right);
+        let number_op = "==";
+
+        self.generate_generic_op(string_case, number_op, left, right)
+    }
+
+    fn generate_neq(
+        &mut self,
+        left: String,
+        right: String,
+    ) -> String {
+        format!("!({})", self.generate_eq(left, right))
+    }
+
     fn generate_binop(
         &mut self,
         depth: usize,
@@ -138,32 +215,14 @@ impl CG {
     ) -> String {
         let left = self.generate_expression(depth, &exp1);
         let right = self.generate_expression(depth, &exp2);
-        let op = match binop.tag {
-            easter::punc::BinopTag::Eq => "jsc_eq",
-            easter::punc::BinopTag::NEq => "jsc_neq",
-            easter::punc::BinopTag::StrictEq => "jsc_strict_eq",
-            easter::punc::BinopTag::StrictNEq => "jsc_strict_neq",
-            easter::punc::BinopTag::Lt => "jsc_lt",
-            easter::punc::BinopTag::LEq => "jsc_leq",
-            easter::punc::BinopTag::Gt => "jsc_gt",
-            easter::punc::BinopTag::GEq => "jsc_geq",
-            easter::punc::BinopTag::LShift => "jsc_lshift",
-            easter::punc::BinopTag::RShift => "jsc_shift",
-            easter::punc::BinopTag::URShift => "jsc_urshift",
-            easter::punc::BinopTag::Plus => "jsc_plus",
-            easter::punc::BinopTag::Minus => "jsc_minus",
-            easter::punc::BinopTag::Times => "jsc_times",
-            easter::punc::BinopTag::Div => "jsc_div",
-            easter::punc::BinopTag::Mod => "jsc_mod",
-            easter::punc::BinopTag::BitOr => "jsc_bit_or",
-            easter::punc::BinopTag::BitXor => "jsc_bit_xor",
-            easter::punc::BinopTag::BitAnd => "jsc_bit_and",
-            easter::punc::BinopTag::In => "in",
-            easter::punc::BinopTag::Instanceof => "instanceof",
-        };
-
-        // TODO: replace with inline generation
-        format!("{}(isolate, {}, {})", op, left, right)
+        match binop.tag {
+            easter::punc::BinopTag::Eq => self.generate_eq(left, right),
+            easter::punc::BinopTag::NEq => self.generate_neq(left, right),
+            easter::punc::BinopTag::Plus => self.generate_plus(left, right),
+            easter::punc::BinopTag::Minus => self.generate_minus(left, right),
+            easter::punc::BinopTag::LEq => self.generate_leq(left, right),
+            _ => panic!("Unsupported operator: {:?}", binop.tag)
+        }
     }
 
     fn generate_dot(
@@ -349,46 +408,6 @@ impl CG {
         self.writeln(0, "using v8::Object;");
         self.writeln(0, "using v8::String;");
         self.writeln(0, "using v8::Value;\n");
-
-        self.writeln(0, "
-Local<Value> jsc_plus(Isolate* isolate, Local<Value> a, Local<Value> b) {
-  Local<Value> result;
-
-  if (a->IsString() || b->IsString()) {
-    result = String::Concat(a->ToString(), b->ToString());
-  } else if (a->IsNumber() || b->IsNumber()) {
-    double aNumber = a->ToNumber(isolate)->Value();
-    double bNumber = b->ToNumber(isolate)->Value();
-    result = Number::New(isolate, aNumber + bNumber);
-  }
-
-  return result;
-}
-
-Local<Value> jsc_leq(Isolate* isolate, Local<Value> a, Local<Value> b) {
-  Local<Value> result;
-
-  if (a->IsNumber() || b->IsNumber()) {
-    double aNumber = a->ToNumber(isolate)->Value();
-    double bNumber = b->ToNumber(isolate)->Value();
-    result = Number::New(isolate, aNumber <= bNumber);
-  }
-
-  return result;
-}
-
-Local<Value> jsc_minus(Isolate* isolate, Local<Value> a, Local<Value> b) {
-  Local<Value> result;
-
-  if (a->IsNumber() || b->IsNumber()) {
-    double aNumber = a->ToNumber(isolate)->Value();
-    double bNumber = b->ToNumber(isolate)->Value();
-    result = Number::New(isolate, aNumber - bNumber);
-  }
-
-  return result;
-}
-");
     }
 
     fn generate_postfix(&mut self) {
