@@ -23,7 +23,7 @@ fn main() {
     }
     fs::create_dir_all(output_directory.as_str()).expect("Unable to create output directory");
     
-    let cg = jsc::cg::CG::new(ast, output_directory.as_str(), entry_module);
+    let mut cg = jsc::cg::CG::new(ast, output_directory.as_str(), entry_module);
     cg.generate();
 
     jsc::entry::generate(output_directory.as_str(), entry_module);

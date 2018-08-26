@@ -7,10 +7,12 @@ extern crate easter;
 pub struct CG {
     ast: easter::prog::Script,
     output_file: Box<File>,
+    tmp_count: u64,
+    tmps: Vec<String>,
 }
 
 impl CG {
-    fn writeln<S>(&self, depth: usize, output: S) where S: Into<String> {
+    fn writeln<S>(&mut self, depth: usize, output: S) where S: Into<String> {
         let indent = 2; // spaces
         let indents = iter::repeat(" ").take(depth * indent).collect::<String>();
         let line = format!("{}{}\n", indents, output.into());
@@ -18,8 +20,23 @@ impl CG {
         f.write_all(line.as_bytes()).expect("failed to write")
     }
 
+    fn generate_tmp<S>(&mut self, prefix_s: S) -> String where S: Into<String> {
+        let prefix = prefix_s.into();
+        self.tmp_count = self.tmp_count + 1;
+        let tmp = format!("{}_{}", prefix, self.tmp_count);
+        if self.tmps.contains(&tmp) {
+            self.generate_tmp(prefix)
+        } else {
+            tmp
+        }
+    }
+
+    fn register_tmp<S>(&mut self, tmp: S) where S: Into<String> {
+        self.tmps.push(tmp.into());
+    }
+
     fn generate_function_declaration(
-        &self,
+        &mut self,
         depth: usize,
         id: &easter::id::Id,
         _: &easter::fun::Params,
@@ -43,28 +60,33 @@ impl CG {
         full_name
     }
 
-    fn generate_call<'a>(&self, depth: usize, expression: &easter::expr::Expr, args: &Vec<easter<>::expr::Expr>) -> String {
+    fn generate_call<'a>(&mut self, depth: usize, expression: &easter::expr::Expr, args: &Vec<easter<>::expr::Expr>) -> String {
         let fn_name = self.generate_expression(depth, expression);
-        self.writeln(depth, format!("Local<FunctionTemplate> tpl_{} = FunctionTemplate::New(isolate, {});", fn_name, fn_name));
-        self.writeln(depth, format!("Local<Function> fn_{} = tpl_{}->GetFunction();", fn_name, fn_name));
-        self.writeln(depth, format!("fn_{}->SetName(String::NewFromUtf8(isolate, \"{}\"));", fn_name, fn_name));
+
+        let ftpl_tmp = self.generate_tmp("ftpl");
+        let fn_tmp = self.generate_tmp("fn");
+        self.writeln(depth, format!("Local<FunctionTemplate> {} = FunctionTemplate::New(isolate, {});", ftpl_tmp, fn_name));
+        self.writeln(depth, format!("Local<Function> {} = {}->GetFunction();", fn_tmp, ftpl_tmp));
+        self.writeln(depth, format!("{}->SetName(String::NewFromUtf8(isolate, \"{}\"));", fn_tmp, fn_name));
 
         let args_len = args.len();
         let mut argv_items = Vec::with_capacity(args_len);
-        for (i, arg) in args.iter().enumerate() {
+        for arg in args.iter() {
             let arg_holder = self.generate_expression(depth, arg);
-            self.writeln(depth, format!("auto arg{} = {};", i, arg_holder));
-            argv_items.push(format!("arg{}", i));
+            let tmp = self.generate_tmp("arg");
+            self.writeln(depth, format!("auto {} = {};", tmp, arg_holder));
+            argv_items.push(tmp);
         }
 
-        self.writeln(depth, format!("Local<Value> fn_{}_argv[] = {{ {} }};", fn_name, argv_items.join(", ")));
-        self.writeln(depth, format!("fn_{}->Call(Null(isolate), {}, fn_{}_argv);", fn_name, args.len(), fn_name));
+        let argv_tmp = self.generate_tmp("argv");
+        self.writeln(depth, format!("Local<Value> {}[] = {{ {} }};", argv_tmp, argv_items.join(", ")));
+        self.writeln(depth, format!("{}->Call(Null(isolate), {}, {});", fn_tmp, args.len(), argv_tmp));
 
         fn_name
     }
 
     fn generate_binop(
-        &self,
+        &mut self,
         depth: usize,
         binop: &easter::punc::Binop,
         exp1: &Box<easter::expr::Expr>,
@@ -99,7 +121,7 @@ impl CG {
         format!("{}(isolate, {}, {})", op, left, right)
     }
 
-    fn generate_expression(&self, depth: usize, expression: &easter::expr::Expr) -> String {
+    fn generate_expression(&mut self, depth: usize, expression: &easter::expr::Expr) -> String {
         match expression {
             &easter::expr::Expr::Call(_, ref name, ref args) =>
                 self.generate_call(depth, name, args),
@@ -120,7 +142,7 @@ impl CG {
         }
     }
 
-    fn generate_declaration(&self, depth: usize, id: &easter::id::Id, expression: &Option<easter::expr::Expr>) {
+    fn generate_declaration(&mut self, depth: usize, id: &easter::id::Id, expression: &Option<easter::expr::Expr>) {
         let suffix = match expression {
             &Some (ref exp) => {
                 let generated = self.generate_expression(depth, &exp);
@@ -128,17 +150,19 @@ impl CG {
             },
             _ => "".to_string(),
         };
-        self.writeln(depth, format!("Local<Value> {}{};", id.name.as_ref(), suffix));
+        let tmp = id.name.as_ref();
+        self.register_tmp(tmp);
+        self.writeln(depth, format!("Local<Value> {}{};", tmp, suffix));
     }
 
-    fn generate_destructor(&self, depth: usize, destructor: &easter::decl::Dtor) {
+    fn generate_destructor(&mut self, depth: usize, destructor: &easter::decl::Dtor) {
         match destructor {
             &easter::decl::Dtor::Simple(_, ref id, ref expr_opt) => self.generate_declaration(depth, id, expr_opt),
             _ => panic!("found destructor: {:#?}", destructor),
         }
     }
 
-    fn generate_statement(&self, depth: usize, statement: &easter::stmt::Stmt) {
+    fn generate_statement(&mut self, depth: usize, statement: &easter::stmt::Stmt) {
         match statement {
             &easter::stmt::Stmt::Expr(_, ref e, _) => { self.generate_expression(depth, e); },
             &easter::stmt::Stmt::Var(_, ref destructors, _) => {
@@ -150,7 +174,7 @@ impl CG {
         }
     }
 
-    pub fn generate_statements(&self, depth: usize, ast: &Vec<easter::stmt::StmtListItem>) -> Vec<String> {
+    pub fn generate_statements(&mut self, depth: usize, ast: &Vec<easter::stmt::StmtListItem>) -> Vec<String> {
         let mut exports = Vec::new();
         for statement in ast.iter() {
             match statement {
@@ -170,7 +194,7 @@ impl CG {
         exports
     }
 
-    fn generate_prefix(&self) {
+    fn generate_prefix(&mut self) {
         self.writeln(0, "#include <iostream>\n");
         self.writeln(0, "#include <node.h>\n");
 
@@ -208,7 +232,7 @@ void jsc_printf(const FunctionCallbackInfo<Value>& args) {
 ");
     }
 
-    fn generate_postfix(&self, depth: usize, exports: Vec<String>) {
+    fn generate_postfix(&mut self, depth: usize, exports: Vec<String>) {
         self.writeln(depth, "void Init(Local<Object> exports) {");
 
         for export in exports.iter() {
@@ -219,9 +243,17 @@ void jsc_printf(const FunctionCallbackInfo<Value>& args) {
         self.writeln(depth, "NODE_MODULE(NODE_GYP_MODULE_NAME, Init)");
     }
 
-    pub fn generate(&self) {
+    pub fn generate(&mut self) {
         self.generate_prefix();
-        let exports = self.generate_statements(0, &self.ast.body);
+
+        // Need to work around a mix of immutable and mutable use of self to
+        // grab ast here and call generate_statements later.
+        let mut body = Vec::new();
+        while self.ast.body.len() > 0 {
+            body.push(self.ast.body.remove(0));
+        }
+
+        let exports = self.generate_statements(0, &body);
         self.generate_postfix(0, exports);
     }
 
@@ -231,7 +263,9 @@ void jsc_printf(const FunctionCallbackInfo<Value>& args) {
 
         CG {
             ast,
-            output_file: Box::new(File::create(path).expect(error.as_str()))
+            output_file: Box::new(File::create(path).expect(error.as_str())),
+            tmp_count: 0,
+            tmps: Vec::new()
         }
     }
 }
