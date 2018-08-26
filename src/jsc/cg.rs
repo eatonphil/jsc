@@ -38,7 +38,7 @@ impl CG {
         &mut self,
         depth: usize,
         id: &easter::id::Id,
-        _: &easter::fun::Params,
+        params: &easter::fun::Params,
         body: &Vec<easter::stmt::StmtListItem>
     ) {
         let name = if id.is_some() {
@@ -54,6 +54,20 @@ impl CG {
 
         self.writeln(depth, format!("void {}(const FunctionCallbackInfo<Value>& args) {{", name));
         self.writeln(depth + 1, "Isolate* isolate = args.GetIsolate();");
+
+        for (i, param) in params.list.iter().enumerate() {
+            match param {
+                &easter::patt::Patt::Simple (ref id) => {
+                    self.writeln(
+                        depth + 1,
+                        format!("Local<Value> {} = args[{}];",
+                                id.name.as_ref(),
+                                i));
+                },
+                _ =>
+                    panic!("Received complex param (involving destructuring)"),
+            }
+        }
 
         self.generate_statements(depth + 1, body);
 
@@ -229,6 +243,7 @@ impl CG {
 
         self.writeln(depth, format!("if ({}->ToBoolean()->Value()) {{", result));
         self.generate_statement(depth + 1, ok);
+        self.writeln(depth + 1, "return;");
 
         match nok {
             &Some (ref stmt) => {
@@ -312,6 +327,30 @@ Local<Value> jsc_plus(Isolate* isolate, Local<Value> a, Local<Value> b) {
     double aNumber = a->ToNumber(isolate)->Value();
     double bNumber = b->ToNumber(isolate)->Value();
     result = Number::New(isolate, aNumber + bNumber);
+  }
+
+  return result;
+}
+
+Local<Value> jsc_leq(Isolate* isolate, Local<Value> a, Local<Value> b) {
+  Local<Value> result;
+
+  if (a->IsNumber() || b->IsNumber()) {
+    double aNumber = a->ToNumber(isolate)->Value();
+    double bNumber = b->ToNumber(isolate)->Value();
+    result = Number::New(isolate, aNumber <= bNumber);
+  }
+
+  return result;
+}
+
+Local<Value> jsc_minus(Isolate* isolate, Local<Value> a, Local<Value> b) {
+  Local<Value> result;
+
+  if (a->IsNumber() || b->IsNumber()) {
+    double aNumber = a->ToNumber(isolate)->Value();
+    double bNumber = b->ToNumber(isolate)->Value();
+    result = Number::New(isolate, aNumber - bNumber);
   }
 
   return result;
