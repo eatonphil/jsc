@@ -6,7 +6,7 @@ extern crate easter;
 
 pub struct CG {
     ast: easter::prog::Script,
-    output_file: Box<File>,
+    output_file: File,
     tmp_count: u64,
     tmps: Vec<String>,
 }
@@ -16,8 +16,7 @@ impl CG {
         let indent = 2; // spaces
         let indents = iter::repeat(" ").take(depth * indent).collect::<String>();
         let line = format!("{}{}\n", indents, output.into());
-        let mut f = &*(self.output_file);
-        f.write_all(line.as_bytes()).expect("failed to write")
+        self.output_file.write_all(line.as_bytes()).expect("failed to write")
     }
 
     fn generate_tmp<S>(&mut self, prefix_s: S) -> String where S: Into<String> {
@@ -41,23 +40,19 @@ impl CG {
         id: &easter::id::Id,
         _: &easter::fun::Params,
         body: &Vec<easter::stmt::StmtListItem>
-    ) -> String {
+    ) {
         let name = if id.is_some() {
             id.name.as_ref()
         } else {
             "lambda"
         };
 
-        let full_name = format!("jsc_{}", name);
-
-        self.writeln(depth, format!("void {}(const FunctionCallbackInfo<Value>& args) {{", full_name));
+        self.writeln(depth, format!("void {}(const FunctionCallbackInfo<Value>& args) {{", name));
         self.writeln(depth + 1, "Isolate* isolate = args.GetIsolate();");
 
         self.generate_statements(depth + 1, body);
 
         self.writeln(depth, "}\n");
-
-        full_name
     }
 
     fn generate_call<'a>(&mut self, depth: usize, expression: &easter::expr::Expr, args: &Vec<easter<>::expr::Expr>) -> String {
@@ -80,9 +75,15 @@ impl CG {
 
         let argv_tmp = self.generate_tmp("argv");
         self.writeln(depth, format!("Local<Value> {}[] = {{ {} }};", argv_tmp, argv_items.join(", ")));
-        self.writeln(depth, format!("{}->Call(Null(isolate), {}, {});", fn_tmp, args.len(), argv_tmp));
 
-        fn_name
+        let result_tmp = self.generate_tmp("result");
+        self.writeln(depth, format!("Local<Value> {} = {}->Call(Null(isolate), {}, {});",
+                                    result_tmp,
+                                    fn_tmp,
+                                    args.len(),
+                                    argv_tmp));
+
+        result_tmp
     }
 
     fn generate_binop(
@@ -162,6 +163,15 @@ impl CG {
         }
     }
 
+    fn generate_return(&mut self, depth: usize, expression: &Option<easter::expr::Expr>) {
+        let result = match expression {
+            &Some (ref exp) => self.generate_expression(depth, exp),
+            _ => "v8::Null".to_string()
+        };
+
+        self.writeln(depth, format!("args.GetReturnValue().Set({});", result));
+    }
+
     fn generate_statement(&mut self, depth: usize, statement: &easter::stmt::Stmt) {
         match statement {
             &easter::stmt::Stmt::Expr(_, ref e, _) => { self.generate_expression(depth, e); },
@@ -170,28 +180,23 @@ impl CG {
                     self.generate_destructor(depth, destructor);
                 }
             },
+            &easter::stmt::Stmt::Return(_, ref result, _) => self.generate_return(depth, result),
             _ => panic!("found stmt: {:#?}", statement),
         }
     }
 
-    pub fn generate_statements(&mut self, depth: usize, ast: &Vec<easter::stmt::StmtListItem>) -> Vec<String> {
-        let mut exports = Vec::new();
+    pub fn generate_statements(&mut self, depth: usize, ast: &Vec<easter::stmt::StmtListItem>) {
         for statement in ast.iter() {
             match statement {
                 &easter::stmt::StmtListItem::Decl(easter::decl::Decl::Fun(easter::fun::Fun { ref id, ref params, ref body, .. })) =>
                     match id {
-                        &Some(ref id) => {
-                            let decl = self.generate_function_declaration(depth, id, params, body);
-                            exports.push(decl)
-                        },
-                        _ => panic!("anonymous function declarations not supported"),
+                        &Some(ref id) => self.generate_function_declaration(depth, id, params, body),
+                        _ => panic!("anonymous function declarations not supported")
                     },
                 &easter::stmt::StmtListItem::Stmt(ref s) =>
                     self.generate_statement(depth, s)
             }
         }
-
-        exports
     }
 
     fn generate_prefix(&mut self) {
@@ -232,13 +237,9 @@ void jsc_printf(const FunctionCallbackInfo<Value>& args) {
 ");
     }
 
-    fn generate_postfix(&mut self, depth: usize, exports: Vec<String>) {
+    fn generate_postfix(&mut self, depth: usize) {
         self.writeln(depth, "void Init(Local<Object> exports) {");
-
-        for export in exports.iter() {
-            self.writeln(depth + 1, format!("NODE_SET_METHOD(exports, \"{}\", {});", export, export));
-        }
-
+        self.writeln(depth + 1, "NODE_SET_METHOD(exports, \"jsc_main\", jsc_main);");
         self.writeln(depth, "}\n");
         self.writeln(depth, "NODE_MODULE(NODE_GYP_MODULE_NAME, Init)");
     }
@@ -253,8 +254,8 @@ void jsc_printf(const FunctionCallbackInfo<Value>& args) {
             body.push(self.ast.body.remove(0));
         }
 
-        let exports = self.generate_statements(0, &body);
-        self.generate_postfix(0, exports);
+        self.generate_statements(0, &body);
+        self.generate_postfix(0);
     }
 
     pub fn new<S>(ast: easter::prog::Script, output_directory: S, module_name: S) -> CG where S: Into<String> {
@@ -263,7 +264,7 @@ void jsc_printf(const FunctionCallbackInfo<Value>& args) {
 
         CG {
             ast,
-            output_file: Box::new(File::create(path).expect(error.as_str())),
+            output_file: File::create(path).expect(error.as_str()),
             tmp_count: 0,
             tmps: Vec::new()
         }

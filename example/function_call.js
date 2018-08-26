@@ -2,6 +2,6 @@ function test() {
   return "hello from this function!";
 }
 
-function main() {
-  console.log(test());
+function jsc_main() {
+  jsc_printf(test());
 }
