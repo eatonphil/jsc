@@ -187,15 +187,38 @@ impl CG {
         self.generate_number_op("<=", left, right)
     }
 
+    // TODO: support non numbers
+    fn generate_geq(
+        &mut self,
+        left: String,
+        right: String
+    ) -> String {
+        self.generate_number_op(">=", left, right)
+    }
+
+    fn generate_lt(
+        &mut self,
+        left: String,
+        right: String
+    ) -> String {
+        self.generate_number_op("<", left, right)
+    }
+
+    fn generate_gt(
+        &mut self,
+        left: String,
+        right: String
+    ) -> String {
+        self.generate_number_op(">", left, right)
+    }
+
+    // TODO: deal with string case
     fn generate_eq(
         &mut self,
         left: String,
         right: String
     ) -> String {
-        let string_case = format!("{}->ToString()->Value() == {}->ToString()->Value()", left, right);
-        let number_op = "==";
-
-        self.generate_generic_op(string_case, number_op, left, right)
+        self.generate_number_op("==", left, right)
     }
 
     fn generate_neq(
@@ -203,7 +226,7 @@ impl CG {
         left: String,
         right: String,
     ) -> String {
-        format!("!({})", self.generate_eq(left, right))
+        self.generate_number_op("!=", left, right)
     }
 
     fn generate_binop(
@@ -221,6 +244,9 @@ impl CG {
             easter::punc::BinopTag::Plus => self.generate_plus(left, right),
             easter::punc::BinopTag::Minus => self.generate_minus(left, right),
             easter::punc::BinopTag::LEq => self.generate_leq(left, right),
+            easter::punc::BinopTag::GEq => self.generate_geq(left, right),
+            easter::punc::BinopTag::Lt => self.generate_lt(left, right),
+            easter::punc::BinopTag::Gt => self.generate_gt(left, right),
             _ => panic!("Unsupported operator: {:?}", binop.tag)
         }
     }
@@ -237,13 +263,52 @@ impl CG {
                 accessor.value)
     }
 
-    fn generate_expression(&mut self, depth: usize, expression: &easter::expr::Expr) -> String {
+    fn generate_assign(
+        &mut self,
+        depth: usize,
+        assop: &easter::punc::Assop,
+        patt: &easter::patt::AssignTarget,
+        body: &easter::expr::Expr
+    ) -> String {
+        let op = match assop.tag {
+            easter::punc::AssopTag::Eq => "=",
+            easter::punc::AssopTag::PlusEq => "+=",
+            easter::punc::AssopTag::MinusEq => "-=",
+            easter::punc::AssopTag::TimesEq => "*=",
+            easter::punc::AssopTag::DivEq => "/=",
+            easter::punc::AssopTag::ModEq => "%=",
+            easter::punc::AssopTag::LShiftEq => "<<=",
+            easter::punc::AssopTag::RShiftEq => ">>=",
+            easter::punc::AssopTag::URShiftEq => ">>>=",
+            easter::punc::AssopTag::BitOrEq => "|=",
+            easter::punc::AssopTag::BitXorEq => "^=",
+            easter::punc::AssopTag::BitAndEq => "&="
+        };
+
+        let target: String = match patt {
+            &easter::patt::AssignTarget::Id (ref id) =>
+                id.name.as_ref().to_string(),
+            _ =>
+                panic!("Unsupported assign target: {:#?}", assop.tag)
+        };
+
+        let body_gen = self.generate_expression(depth, body);
+
+        format!("{} {} {}", target, op, body_gen)
+    }
+
+    fn generate_expression(
+        &mut self,
+        depth: usize,
+        expression: &easter::expr::Expr
+    ) -> String {
         match expression {
             &easter::expr::Expr::Call(_, ref name, ref args) =>
                 self.generate_call(depth, name, args),
             &easter::expr::Expr::Id(ref id) =>
                 match id.name.as_ref() {
                     "console" => "isolate->GetCurrentContext()->Global()->Get(String::NewFromUtf8(isolate, \"console\"))",
+                    "global" => "isolate->GetCurrentContext()->Global()",
                     other => other
                 }.to_string(),
             &easter::expr::Expr::String(_, ref string) =>
@@ -258,6 +323,13 @@ impl CG {
                 self.generate_binop(depth, op, exp1, exp2),
             &easter::expr::Expr::Dot(_, ref object, ref accessor) =>
                 self.generate_dot(depth, object, accessor),
+            &easter::expr::Expr::Assign(_, ref assop, ref target_patt, ref body) =>
+                match target_patt {
+                    &easter::patt::Patt::Simple (ref target) =>
+                        self.generate_assign(depth, assop, &target, body),
+                    _ =>
+                        panic!("Got complex assignment (destructuring): {:#?}", expression)
+                },
             _ =>
                 panic!("Got expression: {:#?}", expression),
         }
@@ -297,13 +369,11 @@ impl CG {
         self.writeln(depth, format!("args.GetReturnValue().Set({});", result));
     }
 
-    fn generate_condition(
+    fn generate_test(
         &mut self,
         depth: usize,
-        test: &easter::expr::Expr,
-        ok: &easter::stmt::Stmt,
-        nok: &Option<Box<easter::stmt::Stmt>>
-    ) {
+        test: &easter::expr::Expr
+    ) -> String {
         let ctx_tmp = self.generate_tmp("ctx");
         let global_tmp = self.generate_tmp("global");
         let boolean_tmp = self.generate_tmp("Boolean");
@@ -323,6 +393,18 @@ impl CG {
             boolean_tmp,
             vec![test_result]);
 
+        result
+    }
+
+    fn generate_condition(
+        &mut self,
+        depth: usize,
+        test: &easter::expr::Expr,
+        ok: &easter::stmt::Stmt,
+        nok: &Option<Box<easter::stmt::Stmt>>
+    ) {
+        let result = self.generate_test(depth, test);
+
         self.writeln(depth, format!("if ({}->ToBoolean()->Value()) {{", result));
         self.generate_statement(depth + 1, ok);
         self.writeln(depth + 1, "return;");
@@ -338,6 +420,20 @@ impl CG {
         self.writeln(depth, "}");
     }
 
+    fn generate_while(
+        &mut self,
+        depth: usize,
+        test: &easter::expr::Expr,
+        body: &Box<easter::stmt::Stmt>
+    ) {
+        let result = self.generate_test(depth, test);
+        self.writeln(depth, format!("while ({}->ToBoolean()->Value()) {{", result));
+        self.generate_statement(depth + 1, body);
+        let next = self.generate_test(depth + 1, test);
+        self.writeln(depth + 1, format!("{} = {};", result, next));
+        self.writeln(depth, "}");
+    }
+
     fn generate_statement(
         &mut self,
         depth: usize,
@@ -345,7 +441,8 @@ impl CG {
     ) {
         match statement {
             &easter::stmt::Stmt::Expr(_, ref e, _) => {
-                self.generate_expression(depth, e);
+                let gen = self.generate_expression(depth, e);
+                self.writeln(depth, format!("{};", gen));
             },
             &easter::stmt::Stmt::Var(_, ref destructors, _) => {
                 for destructor in destructors {
@@ -356,6 +453,8 @@ impl CG {
                 self.generate_return(depth, result),
             &easter::stmt::Stmt::If(_, ref test, ref ok, ref nok) =>
                 self.generate_condition(depth, test, ok, nok),
+            &easter::stmt::Stmt::While(_, ref test, ref body) =>
+                self.generate_while(depth, test, body),
             &easter::stmt::Stmt::Block(_, ref statements) =>
                 self.generate_statements(depth, statements),
             _ => panic!("found stmt: {:#?}", statement),
