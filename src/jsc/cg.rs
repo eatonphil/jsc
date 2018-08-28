@@ -13,6 +13,12 @@ pub struct CG {
     generated_funcs: Vec<String>
 }
 
+struct TCO {
+    name: String,
+    params: Vec<String>,
+    in_return: bool
+}
+
 impl CG {
     fn writeln<S>(&mut self, depth: usize, output: S) where S: Into<String> {
         let indent = 2; // spaces
@@ -41,7 +47,8 @@ impl CG {
         depth: usize,
         id: &easter::id::Id,
         params: &easter::fun::Params,
-        body: &Vec<easter::stmt::StmtListItem>
+        body: &Vec<easter::stmt::StmtListItem>,
+        _: &Option<TCO>
     ) {
         let name = if id.is_some() {
             let id = id.name.as_ref();
@@ -58,9 +65,11 @@ impl CG {
         self.writeln(depth, format!("void {}(const FunctionCallbackInfo<Value>& args) {{", name));
         self.writeln(depth + 1, "Isolate* isolate = args.GetIsolate();");
 
+        let mut param_strings = Vec::new();
         for (i, param) in params.list.iter().enumerate() {
             match param {
                 &easter::patt::Patt::Simple (ref id) => {
+                    param_strings.push(id.name.as_ref().to_string());
                     self.writeln(
                         depth + 1,
                         format!("Local<Value> {} = args[{}];",
@@ -72,42 +81,64 @@ impl CG {
             }
         }
 
-        self.generate_statements(depth + 1, body);
+        let tail_recurse_label = self.generate_tmp("tail_recurse");
+        self.writeln(0, format!("{}:", tail_recurse_label));
+
+        self.generate_statements(depth + 1, body, &Some (TCO {
+            name: tail_recurse_label,
+            params: param_strings,
+            in_return: false,
+        }));
 
         self.writeln(depth, "}\n");
     }
 
+    // TODO: this cannot generate dependencies or all expressions must be treated as such
     fn generate_call_internal(
         &mut self,
         depth: usize,
         fn_tmp: String,
-        args: Vec<String>
+        args: Vec<String>,
+        tco: &Option<TCO>
     ) -> String {
-        let argv_tmp = self.generate_tmp("argv");
-        self.writeln(depth, format!("Local<Value> {}[] = {{ {} }};", argv_tmp, args.join(", ")));
+        match tco {
+            &Some (TCO { in_return: true, ref params, ref name }) => {
+                for (i, arg) in args.iter().enumerate() {
+                    self.writeln(depth, format!("{} = {};", params[i], arg));
+                }
 
-        let result_tmp = self.generate_tmp("result");
-        self.writeln(depth, format!("Local<Value> {} = {}->Call(Null(isolate), {}, {});",
-                                    result_tmp,
-                                    fn_tmp,
-                                    args.len(),
-                                    argv_tmp));
+                self.writeln(depth, format!("goto {};", name));
 
-        result_tmp        
+                "".to_string()
+            },
+            _ => {
+                let argv_tmp = self.generate_tmp("argv");
+                self.writeln(depth, format!("Local<Value> {}[] = {{ {} }};", argv_tmp, args.join(", ")));
+
+                let result_tmp = self.generate_tmp("result");
+                self.writeln(depth, format!("Local<Value> {} = {}->Call(Null(isolate), {}, {});",
+                                            result_tmp,
+                                            fn_tmp,
+                                            args.len(),
+                                            argv_tmp));
+                result_tmp
+            }
+        }
     }
 
     fn generate_call(
         &mut self,
         depth: usize,
         expression: &easter::expr::Expr,
-        args: &Vec<easter<>::expr::Expr>
+        args: &Vec<easter<>::expr::Expr>,
+        tco: &Option<TCO>
     ) -> String {
-        let fn_name = self.generate_expression(depth, expression);
+        let fn_name = self.generate_expression(depth, expression, &None);
 
         let args_len = args.len();
         let mut argv_items = Vec::with_capacity(args_len);
         for arg in args.iter() {
-            let arg_holder = self.generate_expression(depth, arg);
+            let arg_holder = self.generate_expression(depth, arg, &None);
             let tmp = self.generate_tmp("arg");
             self.writeln(depth, format!("Local<Value> {} = {};", tmp, arg_holder));
             argv_items.push(tmp);
@@ -126,7 +157,7 @@ impl CG {
             self.writeln(depth, format!("Local<Function> {} = Local<Function>::Cast({});", fn_tmp, fn_name));
         }
 
-        self.generate_call_internal(depth, fn_tmp, argv_items)
+        self.generate_call_internal(depth, fn_tmp, argv_items, tco)
     }
 
     fn generate_number_op(
@@ -236,8 +267,8 @@ impl CG {
         exp1: &Box<easter::expr::Expr>,
         exp2: &Box<easter::expr::Expr>
     ) -> String {
-        let left = self.generate_expression(depth, &exp1);
-        let right = self.generate_expression(depth, &exp2);
+        let left = self.generate_expression(depth, &exp1, &None);
+        let right = self.generate_expression(depth, &exp2, &None);
         match binop.tag {
             easter::punc::BinopTag::Eq => self.generate_eq(left, right),
             easter::punc::BinopTag::NEq => self.generate_neq(left, right),
@@ -257,7 +288,7 @@ impl CG {
         object: &easter::expr::Expr,
         accessor: &easter::obj::DotKey
     ) -> String {
-        let exp = self.generate_expression(depth, object);
+        let exp = self.generate_expression(depth, object, &None);
         format!("Local<Object>::Cast({})->Get(String::NewFromUtf8(isolate, \"{}\"))",
                 exp,
                 accessor.value)
@@ -292,7 +323,7 @@ impl CG {
                 panic!("Unsupported assign target: {:#?}", assop.tag)
         };
 
-        let body_gen = self.generate_expression(depth, body);
+        let body_gen = self.generate_expression(depth, body, &None);
 
         format!("{} {} {}", target, op, body_gen)
     }
@@ -300,11 +331,12 @@ impl CG {
     fn generate_expression(
         &mut self,
         depth: usize,
-        expression: &easter::expr::Expr
+        expression: &easter::expr::Expr,
+        tco: &Option<TCO>
     ) -> String {
         match expression {
             &easter::expr::Expr::Call(_, ref name, ref args) =>
-                self.generate_call(depth, name, args),
+                self.generate_call(depth, name, args, tco),
             &easter::expr::Expr::Id(ref id) =>
                 match id.name.as_ref() {
                     "console" => "isolate->GetCurrentContext()->Global()->Get(String::NewFromUtf8(isolate, \"console\"))",
@@ -343,7 +375,7 @@ impl CG {
     ) {
         let suffix = match expression {
             &Some (ref exp) => {
-                let generated = self.generate_expression(depth, &exp);
+                let generated = self.generate_expression(depth, &exp, &None);
                 format!(" = {}", generated)
             },
             _ => "".to_string(),
@@ -360,13 +392,32 @@ impl CG {
         }
     }
 
-    fn generate_return(&mut self, depth: usize, expression: &Option<easter::expr::Expr>) {
+    fn generate_return(
+        &mut self,
+        depth: usize,
+        expression: &Option<easter::expr::Expr>,
+        tco: &Option<TCO>
+    ) {
         let result = match expression {
-            &Some (ref exp) => self.generate_expression(depth, exp),
+            &Some (ref exp) => {
+                let tco_in_return = match tco {
+                    &Some (TCO { ref name, ref params, .. }) => Some (TCO {
+                        name: name.clone(),
+                        params: params.clone(),
+                        in_return: true
+                    }),
+                    _ => None
+                };
+                self.generate_expression(depth, exp, &tco_in_return)
+            },
             _ => "v8::Null".to_string()
         };
 
-        self.writeln(depth, format!("args.GetReturnValue().Set({});", result));
+        // TCO not invoked
+        if result != "" {
+            self.writeln(depth, format!("args.GetReturnValue().Set({});", result));
+            self.writeln(depth, "return;");
+        }
     }
 
     fn generate_test(
@@ -387,11 +438,12 @@ impl CG {
                                     boolean_tmp,
                                     global_tmp));
 
-        let test_result = self.generate_expression(depth, test);
+        let test_result = self.generate_expression(depth, test, &None);
         let result = self.generate_call_internal(
             depth,
             boolean_tmp,
-            vec![test_result]);
+            vec![test_result],
+            &None);
 
         result
     }
@@ -401,18 +453,19 @@ impl CG {
         depth: usize,
         test: &easter::expr::Expr,
         ok: &easter::stmt::Stmt,
-        nok: &Option<Box<easter::stmt::Stmt>>
+        nok: &Option<Box<easter::stmt::Stmt>>,
+        tco: &Option<TCO>
     ) {
         let result = self.generate_test(depth, test);
 
         self.writeln(depth, format!("if ({}->ToBoolean()->Value()) {{", result));
-        self.generate_statement(depth + 1, ok);
+        self.generate_statement(depth + 1, ok, tco);
         self.writeln(depth + 1, "return;");
 
         match nok {
             &Some (ref stmt) => {
                 self.writeln(depth, "} else {");
-                self.generate_statement(depth + 1, stmt);
+                self.generate_statement(depth + 1, stmt, tco);
             },
             _ => ()
         };
@@ -424,11 +477,12 @@ impl CG {
         &mut self,
         depth: usize,
         test: &easter::expr::Expr,
-        body: &Box<easter::stmt::Stmt>
+        body: &Box<easter::stmt::Stmt>,
+        tco: &Option<TCO>
     ) {
         let result = self.generate_test(depth, test);
         self.writeln(depth, format!("while ({}->ToBoolean()->Value()) {{", result));
-        self.generate_statement(depth + 1, body);
+        self.generate_statement(depth + 1, body, tco);
         let next = self.generate_test(depth + 1, test);
         self.writeln(depth + 1, format!("{} = {};", result, next));
         self.writeln(depth, "}");
@@ -437,11 +491,12 @@ impl CG {
     fn generate_statement(
         &mut self,
         depth: usize,
-        statement: &easter::stmt::Stmt
+        statement: &easter::stmt::Stmt,
+        tco: &Option<TCO>
     ) {
         match statement {
             &easter::stmt::Stmt::Expr(_, ref e, _) => {
-                let gen = self.generate_expression(depth, e);
+                let gen = self.generate_expression(depth, e, tco);
                 self.writeln(depth, format!("{};", gen));
             },
             &easter::stmt::Stmt::Var(_, ref destructors, _) => {
@@ -450,33 +505,35 @@ impl CG {
                 }
             },
             &easter::stmt::Stmt::Return(_, ref result, _) =>
-                self.generate_return(depth, result),
+                self.generate_return(depth, result, tco),
             &easter::stmt::Stmt::If(_, ref test, ref ok, ref nok) =>
-                self.generate_condition(depth, test, ok, nok),
+                self.generate_condition(depth, test, ok, nok, tco),
             &easter::stmt::Stmt::While(_, ref test, ref body) =>
-                self.generate_while(depth, test, body),
+                self.generate_while(depth, test, body, tco),
             &easter::stmt::Stmt::Block(_, ref statements) =>
-                self.generate_statements(depth, statements),
+                self.generate_statements(depth, statements, tco),
             _ => panic!("found stmt: {:#?}", statement),
         }
     }
 
-    pub fn generate_statements(
+    fn generate_statements(
         &mut self,
         depth: usize,
-        ast: &Vec<easter::stmt::StmtListItem>
+        ast: &Vec<easter::stmt::StmtListItem>,
+        tco: &Option<TCO>
     ) {
-        for statement in ast.iter() {
+        let len = ast.len();
+        for (i, statement) in ast.iter().enumerate() {
             match statement {
                 &easter::stmt::StmtListItem::Decl(
                     easter::decl::Decl::Fun(
                         easter::fun::Fun { ref id, ref params, ref body, .. })) =>
                     match id {
-                        &Some(ref id) => self.generate_function_declaration(depth, id, params, body),
+                        &Some(ref id) => self.generate_function_declaration(depth, id, params, body, &None),
                         _ => panic!("anonymous function declarations not supported")
                     },
                 &easter::stmt::StmtListItem::Stmt(ref s) =>
-                    self.generate_statement(depth, s)
+                    self.generate_statement(depth, s, if i == len - 1 { tco } else { &None })
             }
         }
     }
@@ -572,7 +629,7 @@ int main(int argc, char* argv[]) {
             body.push(self.ast.body.remove(0));
         }
 
-        self.generate_statements(0, &body);
+        self.generate_statements(0, &body, &None);
         self.generate_postfix();
     }
 
