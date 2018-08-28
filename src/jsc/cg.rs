@@ -16,7 +16,7 @@ pub struct CG {
 struct TCO {
     name: String,
     params: Vec<String>,
-    in_return: bool
+    label: String,
 }
 
 impl CG {
@@ -85,9 +85,9 @@ impl CG {
         self.writeln(0, format!("{}:", tail_recurse_label));
 
         self.generate_statements(depth + 1, body, &Some (TCO {
-            name: tail_recurse_label,
-            params: param_strings,
-            in_return: false,
+            name: name.to_string(),
+            label: tail_recurse_label,
+            params: param_strings
         }));
 
         self.writeln(depth, "}\n");
@@ -98,31 +98,40 @@ impl CG {
         &mut self,
         depth: usize,
         fn_tmp: String,
+        fn_name: String,
         args: Vec<String>,
         tco: &Option<TCO>
     ) -> String {
-        match tco {
-            &Some (TCO { in_return: true, ref params, ref name }) => {
-                for (i, arg) in args.iter().enumerate() {
-                    self.writeln(depth, format!("{} = {};", params[i], arg));
+        let non_tco = match tco {
+            &Some (TCO { ref label, ref params, ref name }) => {
+                if *name == fn_name {
+                    for (i, arg) in args.iter().enumerate() {
+                        self.writeln(depth, format!("{} = {};", params[i], arg));
+                    }
+
+                    self.writeln(depth, format!("goto {};", label));
+
+                    false
+                } else {
+                    true
                 }
-
-                self.writeln(depth, format!("goto {};", name));
-
-                "".to_string()
             },
-            _ => {
-                let argv_tmp = self.generate_tmp("argv");
-                self.writeln(depth, format!("Local<Value> {}[] = {{ {} }};", argv_tmp, args.join(", ")));
+            _ => true
+        };
 
-                let result_tmp = self.generate_tmp("result");
-                self.writeln(depth, format!("Local<Value> {} = {}->Call(Null(isolate), {}, {});",
-                                            result_tmp,
-                                            fn_tmp,
-                                            args.len(),
-                                            argv_tmp));
-                result_tmp
-            }
+        if non_tco {
+            let argv_tmp = self.generate_tmp("argv");
+            self.writeln(depth, format!("Local<Value> {}[] = {{ {} }};", argv_tmp, args.join(", ")));
+
+            let result_tmp = self.generate_tmp("result");
+            self.writeln(depth, format!("Local<Value> {} = {}->Call(Null(isolate), {}, {});",
+                                        result_tmp,
+                                        fn_tmp,
+                                        args.len(),
+                                        argv_tmp));
+            result_tmp
+        } else {
+            "".to_string()
         }
     }
 
@@ -157,7 +166,7 @@ impl CG {
             self.writeln(depth, format!("Local<Function> {} = Local<Function>::Cast({});", fn_tmp, fn_name));
         }
 
-        self.generate_call_internal(depth, fn_tmp, argv_items, tco)
+        self.generate_call_internal(depth, fn_tmp, fn_name, argv_items, tco)
     }
 
     fn generate_number_op(
@@ -399,17 +408,7 @@ impl CG {
         tco: &Option<TCO>
     ) {
         let result = match expression {
-            &Some (ref exp) => {
-                let tco_in_return = match tco {
-                    &Some (TCO { ref name, ref params, .. }) => Some (TCO {
-                        name: name.clone(),
-                        params: params.clone(),
-                        in_return: true
-                    }),
-                    _ => None
-                };
-                self.generate_expression(depth, exp, &tco_in_return)
-            },
+            &Some (ref exp) => self.generate_expression(depth, exp, tco),
             _ => "v8::Null".to_string()
         };
 
@@ -442,6 +441,7 @@ impl CG {
         let result = self.generate_call_internal(
             depth,
             boolean_tmp,
+            "Boolean".to_string(),
             vec![test_result],
             &None);
 
