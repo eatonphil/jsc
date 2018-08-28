@@ -55,8 +55,6 @@ function main() {
 Gets compiled to:
 
 ```cpp
-#include <iostream>
-
 #include <node.h>
 
 using v8::Context;
