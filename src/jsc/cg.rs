@@ -539,8 +539,6 @@ impl CG {
     }
 
     fn generate_prefix(&mut self) {
-        self.writeln(0, "#include <iostream>");
-
         if self.use_node {
             self.writeln(0, "\n#include <node.h>\n");
         } else {
