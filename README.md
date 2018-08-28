@@ -23,8 +23,9 @@ hey there%
 
 ### Todo
 
-* [ ] Replace Node entry with C++/V8 entry
+* [ ] Add tests
 * [ ] Track/map locals in a scope dictionary
+* [ ] Add native target (no Node)
 * [ ] Add support for all binops
 * [ ] Add support for let/const
 * [ ] Add support for first-class functions
