@@ -1,0 +1,5 @@
+test_path: tests
+
+runners:
+  - name: jsc
+    run: jsc test.js
