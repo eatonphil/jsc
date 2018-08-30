@@ -1,0 +1,14 @@
+cases:
+  - name: basic function call
+    status: 0
+    stdout: "hello from this function!"
+
+templates:
+- test.js: |
+    function test() {
+      return "hello from this function!";
+    }
+    
+    function main() {
+      console.log(test());
+    }

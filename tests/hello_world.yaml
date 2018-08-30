@@ -1,0 +1,10 @@
+cases:
+  - name: basic example
+    status: 0
+    stdout: "Hello world!"
+
+templates:
+- test.js: |
+    function main() {
+      console.log("Hello world!");
+    }

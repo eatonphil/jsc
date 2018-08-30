@@ -23,7 +23,6 @@ hey there%
 
 ### Todo
 
-* [ ] Add tests
 * [ ] Track/map locals in a scope dictionary
 * [ ] Add native target (no Node)
 * [ ] Add support for all binops
