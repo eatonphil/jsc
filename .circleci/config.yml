@@ -9,9 +9,8 @@ jobs:
           name: Install debian-packaged dependencies
           command: |
             apt update
-            apt install -y git build-essential curl
+            apt install -y git build-essential rustc cargo
             ln -s $(which ldc2) /usr/local/bin/ldc
-            curl https://sh.rustup.rs -sSf | sh
       - run:
           name: Install btest
           command: |
