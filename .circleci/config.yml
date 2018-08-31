@@ -9,7 +9,9 @@ jobs:
           name: Install debian-packaged dependencies
           command: |
             apt update
-            apt install -y git build-essential rustc cargo
+            apt install -y git build-essential rustc cargo curl build-essential
+            curl -sL https://deb.nodesource.com/setup_8.x | -E bash -
+            apt install -y nodejs
             ln -s $(which ldc2) /usr/local/bin/ldc
       - run:
           name: Install btest
