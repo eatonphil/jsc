@@ -1,7 +1,7 @@
 cases:
   - name: basic example
     status: 0
-    stdout: "Hello world!"
+    stdout: "Hello world!\n"
 
 templates:
 - test.js: |

@@ -1,7 +1,7 @@
 cases:
   - name: basic while syntax support
     status: 0
-    stdout: 1234
+    stdout: "12586269025\n"
 
 templates:
 - test.js: |

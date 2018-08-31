@@ -3,13 +3,13 @@ cases:
     test: 1
 
     status: 0
-    stdout: ok
+    stdout: "ok\n"
 
   - name: else block if test fails
     test: 0
 
     status: 0
-    stdout: nok
+    stdout: "nok\n"
 
 templates:
 - test.js: |

@@ -1,7 +1,7 @@
 cases:
   - name: tail calls are eliminated
     status: 0
-    stdout: 1235
+    stdout: "12586269025\n"
 
 templates:
 - test.js: |

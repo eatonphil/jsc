@@ -1,7 +1,7 @@
 cases:
   - name: basic local variables
     status: 0
-    stdout: "3"
+    stdout: "3\n"
 
 templates:
 - test.js: |

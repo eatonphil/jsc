@@ -1,7 +1,7 @@
 cases:
   - name: basic function call
     status: 0
-    stdout: "hello from this function!"
+    stdout: "hello from this function!\n"
 
 templates:
 - test.js: |
