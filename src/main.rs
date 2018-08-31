@@ -14,13 +14,11 @@ fn main() {
     let args = clap::App::new("jsc")
         .version("0.1.0")
         .arg(clap::Arg::with_name("entry")
-             .long("entry")
-             .takes_value(true)
-             .required(true))
+             .required(true)
+             .takes_value(true))
         .arg(clap::Arg::with_name("out_dir")
              .long("out_dir")
-             .takes_value(true)
-             .required(true))
+             .takes_value(true))
         .arg(clap::Arg::with_name("target")
              .long("target")
              .takes_value(true)
@@ -28,8 +26,8 @@ fn main() {
         .get_matches();
 
     let source_entry: String = args.value_of("entry").unwrap().to_string();
-    let output_directory: String = args.value_of("out_dir").unwrap().to_string();
-    let target: String = args.value_of("target").unwrap().to_string();
+    let output_directory: String = args.value_of("out_dir").unwrap_or("build").to_string();
+    let target: String = args.value_of("target").unwrap_or("node-program").to_string();
 
     if fs::metadata(output_directory.as_str()).is_ok() {
         fs::remove_dir_all(output_directory.as_str()).expect("Unable to remove output directory");

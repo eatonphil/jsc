@@ -1,0 +1,8 @@
+test_path: tests
+parallelize_runners: true
+
+runners:
+  - name: jsc
+    setup:
+      - RUST_BACKTRACE=1 jsc test.js
+    run: node ./build/test.js

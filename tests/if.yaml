@@ -1,0 +1,22 @@
+cases:
+  - name: if block if if passes
+    test: 1
+
+    status: 0
+    stdout: "ok\n"
+
+  - name: else block if test fails
+    test: 0
+
+    status: 0
+    stdout: "nok\n"
+
+templates:
+- test.js: |
+    function main() {
+      if ({{ test }}) {
+        console.log("ok");
+      } else {
+        console.log("nok");
+      }
+    }

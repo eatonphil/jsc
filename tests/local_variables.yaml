@@ -1,0 +1,13 @@
+cases:
+  - name: basic local variables
+    status: 0
+    stdout: "3\n"
+
+templates:
+- test.js: |
+    function main() {
+      var a = 1;
+      var b = 2;
+      var c = a + b;
+      console.log(c);
+    }

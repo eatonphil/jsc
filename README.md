@@ -16,14 +16,13 @@ $ cargo build
 
 ```bash
 $ cargo build
-$ ./target/debug/jsc --entry example/hello_world.js --out_dir build --target node-program
+$ ./target/debug/jsc example/hello_world.js
 $ node build/hello_world.js
 hey there%
 ```
 
 ### Todo
 
-* [ ] Add tests
 * [ ] Track/map locals in a scope dictionary
 * [ ] Add native target (no Node)
 * [ ] Add support for all binops
