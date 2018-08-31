@@ -12,7 +12,7 @@ jobs:
             apt install -y git build-essential rustc cargo curl build-essential
             curl -sL https://deb.nodesource.com/setup_8.x | bash -
             apt install -y nodejs
-            yarn global add node-gyp
+            npm install -g node-gyp
             ln -s $(which ldc2) /usr/local/bin/ldc
       - run:
           name: Install btest
