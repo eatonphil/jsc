@@ -169,21 +169,6 @@ impl CG {
         self.generate_call_internal(depth, fn_tmp, fn_name, argv_items, tco)
     }
 
-    fn generate_number_op(
-        &mut self,
-        op: &str,
-        left: String,
-        right: String,
-    ) -> String {
-        let number_check = format!("{}->IsNumber() || {}->IsNumber()", left, right);
-        let number_case = format!("Number::New(isolate, {}->ToNumber(isolate)->Value() {} {}->ToNumber(isolate)->Value())", left, op, right);
-
-        // TODO: find NaN value
-        format!("({}) ? ({}) : Local<Number>::Cast(Null(isolate))",
-                number_check,
-                number_case)
-    }
-
     fn generate_cpp_value(
         &mut self,
         depth: usize,
@@ -262,21 +247,36 @@ impl CG {
         check_and_op
     }
 
+    fn generate_number_check_and_op(
+        &mut self,
+        op: &str,
+        left: String,
+        right: String,
+    ) -> String {
+        let number_check = format!("{}->IsNumber() || {}->IsNumber()", left, right);
+        let number_case = format!("Number::New(isolate, {}->ToNumber(isolate)->Value() {} {}->ToNumber(isolate)->Value())", left, op, right);
+
+        // TODO: find NaN value
+        format!("({}) ? ({}) : Local<Number>::Cast(Null(isolate))",
+                number_check,
+                number_case)
+    }
+
     // TODO: boolean addition support
     fn generate_plus(
         &mut self,
         left: String,
         right: String
     ) -> String {
-        let string_case = format!("String::Concat({}->ToString(), {}->ToString())", left, right);
         let number_op = "+";
 
         let string_check = format!("{}->IsString() || {}->IsString()", left, right);
+        let string_case = format!("String::Concat({}->ToString(), {}->ToString())", left, right);
 
         format!("({}) ? Local<Value>::Cast({}) : Local<Value>::Cast({})",
                 string_check,
                 string_case,
-                self.generate_number_op(number_op, left, right))
+                self.generate_number_check_and_op(number_op, left, right))
     }
 
     fn generate_binop(
@@ -294,16 +294,16 @@ impl CG {
             easter::punc::BinopTag::StrictEq => self.generate_strict_bool_op(depth, vec!["String", "Number", "Boolean"], "==", false, left, right),
             easter::punc::BinopTag::StrictNEq => self.generate_strict_bool_op(depth, vec!["String", "Number", "Boolean"], "!=", true, left, right),
             easter::punc::BinopTag::Plus => self.generate_plus(left, right),
-            easter::punc::BinopTag::Minus => self.generate_number_op("-", left, right),
-            easter::punc::BinopTag::Times => self.generate_number_op("*", left, right),
-            easter::punc::BinopTag::Div => self.generate_number_op("/", left, right),
-            easter::punc::BinopTag::Mod => self.generate_number_op("*", left, right),
-            easter::punc::BinopTag::BitOr => self.generate_number_op("|", left, right),
-            easter::punc::BinopTag::BitXor => self.generate_number_op("^", left, right),
-            easter::punc::BinopTag::BitAnd => self.generate_number_op("&", left, right),
-            easter::punc::BinopTag::LShift => self.generate_number_op("<<", left, right),
-            easter::punc::BinopTag::RShift => self.generate_number_op(">>", left, right),
-            easter::punc::BinopTag::URShift => self.generate_number_op(">>>", left, right),
+            easter::punc::BinopTag::Minus => self.generate_number_check_and_op("-", left, right),
+            easter::punc::BinopTag::Times => self.generate_number_check_and_op("*", left, right),
+            easter::punc::BinopTag::Div => self.generate_number_check_and_op("/", left, right),
+            easter::punc::BinopTag::Mod => self.generate_number_check_and_op("*", left, right),
+            easter::punc::BinopTag::BitOr => self.generate_number_check_and_op("|", left, right),
+            easter::punc::BinopTag::BitXor => self.generate_number_check_and_op("^", left, right),
+            easter::punc::BinopTag::BitAnd => self.generate_number_check_and_op("&", left, right),
+            easter::punc::BinopTag::LShift => self.generate_number_check_and_op("<<", left, right),
+            easter::punc::BinopTag::RShift => self.generate_number_check_and_op(">>", left, right),
+            easter::punc::BinopTag::URShift => self.generate_number_check_and_op(">>>", left, right),
             easter::punc::BinopTag::LEq => self.generate_bool_op(depth, vec!["String", "Number"], "<=", false, left, right),
             easter::punc::BinopTag::GEq => self.generate_bool_op(depth, vec!["String", "Number"], ">=", false, left, right),
             easter::punc::BinopTag::Lt => self.generate_bool_op(depth, vec!["String", "Number"], "<", false, left, right),
