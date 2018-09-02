@@ -224,11 +224,12 @@ impl CG {
         depth: usize,
         types: Vec<&str>,
         op: &str,
+        default_case: bool,
         left: String,
         right: String,
     ) -> String {
         // TODO: throw exception?
-        let mut check_and_op = "False(isolate)".to_string();
+        let mut check_and_op = if default_case { "True(isolate)" } else { "False(isolate)" }.to_string();
         for typ in types.iter() {
             // TODO: avoid the clones?
             check_and_op = self.generate_check_and_op(
@@ -243,10 +244,11 @@ impl CG {
         depth: usize,
         types: Vec<&str>,
         op: &str,
+        default_case: bool,
         left: String,
         right: String,
     ) -> String {
-        let mut check_and_op = "False(isolate)".to_string();
+        let mut check_and_op = if default_case { "True(isolate)" } else { "False(isolate)" }.to_string();
         for typ in types.iter() {
             // TODO: avoid all the clones?
             let check = format!("{}->Is{}() && {}->Is{}()", left.clone(), typ, right.clone(), typ);
@@ -287,10 +289,10 @@ impl CG {
         let left = self.generate_expression(depth, &exp1, &None);
         let right = self.generate_expression(depth, &exp2, &None);
         match binop.tag {
-            easter::punc::BinopTag::Eq => self.generate_bool_op(depth, vec!["String", "Number", "Boolean"], "==", left, right),
-            easter::punc::BinopTag::NEq => self.generate_bool_op(depth, vec!["String", "Number", "Boolean"], "!=", left, right),
-            easter::punc::BinopTag::StrictEq => self.generate_strict_bool_op(depth, vec!["String", "Number", "Boolean"], "==", left, right),
-            easter::punc::BinopTag::StrictNEq => self.generate_strict_bool_op(depth, vec!["String", "Number", "Boolean"], "!=", left, right),
+            easter::punc::BinopTag::Eq => self.generate_bool_op(depth, vec!["String", "Number", "Boolean"], "==", false, left, right),
+            easter::punc::BinopTag::NEq => self.generate_bool_op(depth, vec!["String", "Number", "Boolean"], "!=", true, left, right),
+            easter::punc::BinopTag::StrictEq => self.generate_strict_bool_op(depth, vec!["String", "Number", "Boolean"], "==", false, left, right),
+            easter::punc::BinopTag::StrictNEq => self.generate_strict_bool_op(depth, vec!["String", "Number", "Boolean"], "!=", true, left, right),
             easter::punc::BinopTag::Plus => self.generate_plus(left, right),
             easter::punc::BinopTag::Minus => self.generate_number_op("-", left, right),
             easter::punc::BinopTag::Times => self.generate_number_op("*", left, right),
@@ -302,10 +304,10 @@ impl CG {
             easter::punc::BinopTag::LShift => self.generate_number_op("<<", left, right),
             easter::punc::BinopTag::RShift => self.generate_number_op(">>", left, right),
             easter::punc::BinopTag::URShift => self.generate_number_op(">>>", left, right),
-            easter::punc::BinopTag::LEq => self.generate_bool_op(depth, vec!["String", "Number"], "<=", left, right),
-            easter::punc::BinopTag::GEq => self.generate_bool_op(depth, vec!["String", "Number"], ">=", left, right),
-            easter::punc::BinopTag::Lt => self.generate_bool_op(depth, vec!["String", "Number"], "<", left, right),
-            easter::punc::BinopTag::Gt => self.generate_bool_op(depth, vec!["String", "Number"], ">", left, right),
+            easter::punc::BinopTag::LEq => self.generate_bool_op(depth, vec!["String", "Number"], "<=", false, left, right),
+            easter::punc::BinopTag::GEq => self.generate_bool_op(depth, vec!["String", "Number"], ">=", false, left, right),
+            easter::punc::BinopTag::Lt => self.generate_bool_op(depth, vec!["String", "Number"], "<", false, left, right),
+            easter::punc::BinopTag::Gt => self.generate_bool_op(depth, vec!["String", "Number"], ">", false, left, right),
             // TODO: support In and Instanceof
             _ => panic!("Unsupported operator: {:?}", binop.tag)
         }
