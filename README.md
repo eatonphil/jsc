@@ -1,9 +1,5 @@
 # Javascript compiler targeting C++/V8
 
-### Features
-
-* Tail-call optimization
-
 ### Building
 
 Requires Rust, node-gyp, and Node.
@@ -21,14 +17,26 @@ $ node build/hello_world.js
 hey there%
 ```
 
+### Features
+
+* Function calls
+  * Tail-call optimization
+* Primitive numeric operations
+
+#### Not (yet) supported
+
+* Objects
+* Arrays
+* Nested functions
+* First-class functions
+* Closures
+* Implicit global object context
+* And/or operators
+
 ### Todo
 
 * [ ] Track/map locals in a scope dictionary
 * [ ] Add native target (no Node)
-* [ ] Add support for all binops
-* [ ] Add support for let/const
-* [ ] Add support for first-class functions
-* [ ] Add support for nested functions
 
 ### Code produced
 
