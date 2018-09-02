@@ -184,21 +184,57 @@ impl CG {
                 number_case)
     }
 
-    fn generate_generic_op(
+    fn generate_check_and_op(
         &mut self,
-        string_case: String,
-        number_op: &str,
+        op: &str,
+        typ: String,
+        fail_case: String,
+        left: String,
+        right: String
+    ) -> String {
+        let check = format!("{}->Is{}() || {}->Is{}()", left, typ, right, typ);
+        let case = format!("{}->To{}(isolate)->Value() {} {}->To{}(isolate)->Value", left, typ, op, right, typ);
+
+        format!("({}) ? ({}) : {})", check, case, fail_case)
+    }
+
+    fn generate_bool_op(
+        &mut self,
+        types: Vec<&str>,
+        op: &str,
         left: String,
         right: String,
     ) -> String {
-        let string_check = format!("{}->IsString() || {}->IsString()", left, right);
+        // TODO: throw exception?
+        let mut check_and_op = "v8::False()".to_string();
+        for typ in types.iter() {
+            // TODO: avoid the clones?
+            check_and_op = self.generate_check_and_op(op, typ.to_string(), check_and_op, left.clone(), right.clone());
+        }
 
-        format!("({}) ? Local<Value>::Cast({}) : Local<Value>::Cast({})",
-                string_check,
-                string_case,
-                self.generate_number_op(number_op, left, right))
+        check_and_op
     }
 
+    fn generate_strict_bool_op(
+        &mut self,
+        types: Vec<&str>,
+        op: &str,
+        left: String,
+        right: String,
+    ) -> String {
+        let mut check_and_op = "v8::False()".to_string();
+        for typ in types.iter() {
+            // TODO: avoid all the clones?
+            let check = format!("{}->Is{}() && {}->Is{}()", left.clone(), typ, right.clone(), typ);
+            let case = format!("{}->To{}(isolate)->Value() {} {}->To{}(isolate)->Value", left.clone(), typ, op, right.clone(), typ);
+
+            check_and_op = format!("({}) ? ({}) : {})", check, case, check_and_op)
+        }
+
+        check_and_op
+    }
+
+    // TODO: boolean addition support
     fn generate_plus(
         &mut self,
         left: String,
@@ -207,68 +243,15 @@ impl CG {
         let string_case = format!("String::Concat({}->ToString(), {}->ToString())", left, right);
         let number_op = "+";
 
-        self.generate_generic_op(string_case, number_op, left, right)
-    }
+        let string_check = format!("{}->IsString() || {}->IsString()", left, right);
 
-    fn generate_minus(
-        &mut self,
-        left: String,
-        right: String
-    ) -> String {
-        self.generate_number_op("-", left, right)
-    }
-
-    // TODO: support non numbers
-    fn generate_leq(
-        &mut self,
-        left: String,
-        right: String
-    ) -> String {
-        self.generate_number_op("<=", left, right)
-    }
-
-    // TODO: support non numbers
-    fn generate_geq(
-        &mut self,
-        left: String,
-        right: String
-    ) -> String {
-        self.generate_number_op(">=", left, right)
-    }
-
-    fn generate_lt(
-        &mut self,
-        left: String,
-        right: String
-    ) -> String {
-        self.generate_number_op("<", left, right)
-    }
-
-    fn generate_gt(
-        &mut self,
-        left: String,
-        right: String
-    ) -> String {
-        self.generate_number_op(">", left, right)
+        format!("({}) ? Local<Value>::Cast({}) : Local<Value>::Cast({})",
+                string_check,
+                string_case,
+                self.generate_number_op(number_op, left, right))
     }
 
     // TODO: deal with string case
-    fn generate_eq(
-        &mut self,
-        left: String,
-        right: String
-    ) -> String {
-        self.generate_number_op("==", left, right)
-    }
-
-    fn generate_neq(
-        &mut self,
-        left: String,
-        right: String,
-    ) -> String {
-        self.generate_number_op("!=", left, right)
-    }
-
     fn generate_binop(
         &mut self,
         depth: usize,
@@ -279,14 +262,26 @@ impl CG {
         let left = self.generate_expression(depth, &exp1, &None);
         let right = self.generate_expression(depth, &exp2, &None);
         match binop.tag {
-            easter::punc::BinopTag::Eq => self.generate_eq(left, right),
-            easter::punc::BinopTag::NEq => self.generate_neq(left, right),
+            easter::punc::BinopTag::Eq => self.generate_bool_op(vec!["String", "Number", "Bool"], "==", left, right),
+            easter::punc::BinopTag::NEq => self.generate_bool_op(vec!["String", "Number", "Bool"], "!=", left, right),
+            easter::punc::BinopTag::StrictEq => self.generate_strict_bool_op(vec!["String", "Number", "Bool"], "==", left, right),
+            easter::punc::BinopTag::StrictNEq => self.generate_strict_bool_op(vec!["String", "Number", "Bool"], "!=", left, right),
             easter::punc::BinopTag::Plus => self.generate_plus(left, right),
-            easter::punc::BinopTag::Minus => self.generate_minus(left, right),
-            easter::punc::BinopTag::LEq => self.generate_leq(left, right),
-            easter::punc::BinopTag::GEq => self.generate_geq(left, right),
-            easter::punc::BinopTag::Lt => self.generate_lt(left, right),
-            easter::punc::BinopTag::Gt => self.generate_gt(left, right),
+            easter::punc::BinopTag::Minus => self.generate_number_op("-", left, right),
+            easter::punc::BinopTag::Times => self.generate_number_op("*", left, right),
+            easter::punc::BinopTag::Div => self.generate_number_op("/", left, right),
+            easter::punc::BinopTag::Mod => self.generate_number_op("*", left, right),
+            easter::punc::BinopTag::BitOr => self.generate_number_op("|", left, right),
+            easter::punc::BinopTag::BitXor => self.generate_number_op("^", left, right),
+            easter::punc::BinopTag::BitAnd => self.generate_number_op("&", left, right),
+            easter::punc::BinopTag::LShift => self.generate_number_op("<<", left, right),
+            easter::punc::BinopTag::RShift => self.generate_number_op(">>", left, right),
+            easter::punc::BinopTag::URShift => self.generate_number_op(">>>", left, right),
+            easter::punc::BinopTag::LEq => self.generate_bool_op(vec!["String", "Number"], "<=", left, right),
+            easter::punc::BinopTag::GEq => self.generate_bool_op(vec!["String", "Number"], ">=", left, right),
+            easter::punc::BinopTag::Lt => self.generate_bool_op(vec!["String", "Number"], "<", left, right),
+            easter::punc::BinopTag::Gt => self.generate_bool_op(vec!["String", "Number"], ">", left, right),
+            // TODO: support In and Instanceof
             _ => panic!("Unsupported operator: {:?}", binop.tag)
         }
     }
