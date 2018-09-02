@@ -184,8 +184,27 @@ impl CG {
                 number_case)
     }
 
+    fn generate_cpp_value(
+        &mut self,
+        depth: usize,
+        typ: String,
+        value: String,
+    ) -> String {
+        if typ == "String" {
+            let utf8value_tmp = self.generate_tmp("utf8value_tmp");
+            let string_tmp = self.generate_tmp("string_tmp");
+            self.writeln(depth, format!("String::Utf8Value {}({});", utf8value_tmp, value.clone()));
+            self.writeln(depth, format!("std::string {}(*{});", string_tmp, utf8value_tmp));
+            string_tmp
+        } else {
+            format!("{}->To{}(isolate)->Value()", value, typ)
+        }
+    }
+
+    // TODO: restructure to avoid terniary op
     fn generate_check_and_op(
         &mut self,
+        depth: usize,
         op: &str,
         typ: String,
         fail_case: String,
@@ -193,23 +212,27 @@ impl CG {
         right: String
     ) -> String {
         let check = format!("{}->Is{}() || {}->Is{}()", left, typ, right, typ);
-        let case = format!("{}->To{}(isolate)->Value() {} {}->To{}(isolate)->Value", left, typ, op, right, typ);
-
-        format!("({}) ? ({}) : {})", check, case, fail_case)
+        let case = format!("{} {} {}",
+                           self.generate_cpp_value(depth, typ.clone(), left.clone()),
+                           op,
+                           self.generate_cpp_value(depth, typ, right.clone()));
+        format!("({}) ? Boolean::New(isolate, {}) : ({})", check, case, fail_case)
     }
 
     fn generate_bool_op(
         &mut self,
+        depth: usize,
         types: Vec<&str>,
         op: &str,
         left: String,
         right: String,
     ) -> String {
         // TODO: throw exception?
-        let mut check_and_op = "v8::False()".to_string();
+        let mut check_and_op = "False(isolate)".to_string();
         for typ in types.iter() {
             // TODO: avoid the clones?
-            check_and_op = self.generate_check_and_op(op, typ.to_string(), check_and_op, left.clone(), right.clone());
+            check_and_op = self.generate_check_and_op(
+                depth, op, typ.to_string(), check_and_op, left.clone(), right.clone());
         }
 
         check_and_op
@@ -217,18 +240,21 @@ impl CG {
 
     fn generate_strict_bool_op(
         &mut self,
+        depth: usize,
         types: Vec<&str>,
         op: &str,
         left: String,
         right: String,
     ) -> String {
-        let mut check_and_op = "v8::False()".to_string();
+        let mut check_and_op = "False(isolate)".to_string();
         for typ in types.iter() {
             // TODO: avoid all the clones?
             let check = format!("{}->Is{}() && {}->Is{}()", left.clone(), typ, right.clone(), typ);
-            let case = format!("{}->To{}(isolate)->Value() {} {}->To{}(isolate)->Value", left.clone(), typ, op, right.clone(), typ);
-
-            check_and_op = format!("({}) ? ({}) : {})", check, case, check_and_op)
+            let case = format!("{} {} {}",
+                               self.generate_cpp_value(depth, typ.to_string(), left.clone()),
+                               op,
+                               self.generate_cpp_value(depth, typ.to_string(), right.clone()));
+            check_and_op = format!("({}) ? Boolean::New(isolate, {}) : ({})", check, case, check_and_op)
         }
 
         check_and_op
@@ -251,7 +277,6 @@ impl CG {
                 self.generate_number_op(number_op, left, right))
     }
 
-    // TODO: deal with string case
     fn generate_binop(
         &mut self,
         depth: usize,
@@ -262,10 +287,10 @@ impl CG {
         let left = self.generate_expression(depth, &exp1, &None);
         let right = self.generate_expression(depth, &exp2, &None);
         match binop.tag {
-            easter::punc::BinopTag::Eq => self.generate_bool_op(vec!["String", "Number", "Bool"], "==", left, right),
-            easter::punc::BinopTag::NEq => self.generate_bool_op(vec!["String", "Number", "Bool"], "!=", left, right),
-            easter::punc::BinopTag::StrictEq => self.generate_strict_bool_op(vec!["String", "Number", "Bool"], "==", left, right),
-            easter::punc::BinopTag::StrictNEq => self.generate_strict_bool_op(vec!["String", "Number", "Bool"], "!=", left, right),
+            easter::punc::BinopTag::Eq => self.generate_bool_op(depth, vec!["String", "Number", "Boolean"], "==", left, right),
+            easter::punc::BinopTag::NEq => self.generate_bool_op(depth, vec!["String", "Number", "Boolean"], "!=", left, right),
+            easter::punc::BinopTag::StrictEq => self.generate_strict_bool_op(depth, vec!["String", "Number", "Boolean"], "==", left, right),
+            easter::punc::BinopTag::StrictNEq => self.generate_strict_bool_op(depth, vec!["String", "Number", "Boolean"], "!=", left, right),
             easter::punc::BinopTag::Plus => self.generate_plus(left, right),
             easter::punc::BinopTag::Minus => self.generate_number_op("-", left, right),
             easter::punc::BinopTag::Times => self.generate_number_op("*", left, right),
@@ -277,10 +302,10 @@ impl CG {
             easter::punc::BinopTag::LShift => self.generate_number_op("<<", left, right),
             easter::punc::BinopTag::RShift => self.generate_number_op(">>", left, right),
             easter::punc::BinopTag::URShift => self.generate_number_op(">>>", left, right),
-            easter::punc::BinopTag::LEq => self.generate_bool_op(vec!["String", "Number"], "<=", left, right),
-            easter::punc::BinopTag::GEq => self.generate_bool_op(vec!["String", "Number"], ">=", left, right),
-            easter::punc::BinopTag::Lt => self.generate_bool_op(vec!["String", "Number"], "<", left, right),
-            easter::punc::BinopTag::Gt => self.generate_bool_op(vec!["String", "Number"], ">", left, right),
+            easter::punc::BinopTag::LEq => self.generate_bool_op(depth, vec!["String", "Number"], "<=", left, right),
+            easter::punc::BinopTag::GEq => self.generate_bool_op(depth, vec!["String", "Number"], ">=", left, right),
+            easter::punc::BinopTag::Lt => self.generate_bool_op(depth, vec!["String", "Number"], "<", left, right),
+            easter::punc::BinopTag::Gt => self.generate_bool_op(depth, vec!["String", "Number"], ">", left, right),
             // TODO: support In and Instanceof
             _ => panic!("Unsupported operator: {:?}", binop.tag)
         }
@@ -366,6 +391,8 @@ impl CG {
                     _ =>
                         panic!("Got complex assignment (destructuring): {:#?}", expression)
                 },
+            &easter::expr::Expr::True(_) => "True(isolate)".to_string(),
+            &easter::expr::Expr::False(_) => "False(isolate)".to_string(),
             _ =>
                 panic!("Got expression: {:#?}", expression),
         }
@@ -535,16 +562,18 @@ impl CG {
 
     fn generate_prefix(&mut self) {
         if self.use_node {
+            self.writeln(0, "#include <string>\n");
+
             self.writeln(0, "\n#include <node.h>\n");
         } else {
-            self.writeln(0, "#include <stdio.h>");
-            self.writeln(0, "#include <stdlib.h>");
-            self.writeln(0, "#include <string.h>\n");
+            self.writeln(0, "#include <stdio>");
+            self.writeln(0, "#include <stdlib>");
 
             self.writeln(0, "#include <libplatform.h>");
             self.writeln(0, "#include <v8.h>\n");
         }
 
+        self.writeln(0, "using v8::Boolean;");
         self.writeln(0, "using v8::Context;");
         self.writeln(0, "using v8::Exception;");
         self.writeln(0, "using v8::Function;");
@@ -556,6 +585,8 @@ impl CG {
         self.writeln(0, "using v8::Number;");
         self.writeln(0, "using v8::Object;");
         self.writeln(0, "using v8::String;");
+        self.writeln(0, "using v8::False;");
+        self.writeln(0, "using v8::True;");
         self.writeln(0, "using v8::Value;\n");
     }
 

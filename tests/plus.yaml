@@ -9,13 +9,13 @@ cases:
     test: "'1' + '1'"
 
     status: 0
-    stdout: "'11'\n"
+    stdout: "11\n"
 
   - name: numeric and string addition is coercive/concatenative
     test: "'1' + 2"
 
     status: 0
-    stdout: "'12'\n"
+    stdout: "12\n"
 
 templates:
 - test.js: |
