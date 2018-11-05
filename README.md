@@ -23,13 +23,15 @@ hey there
 * Function calls
   * Tail-call optimization
 * Primitive numeric operations
+* Arrays
+* Numbers
+* Strings
 
 #### Not (yet) supported
 
+* Prototype functions
 * Objects
-* Arrays
 * Nested functions
-* First-class functions
 * Closures
 * And/or operators
 

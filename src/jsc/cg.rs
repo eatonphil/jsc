@@ -11,7 +11,8 @@ pub struct CG {
     ast: easter::prog::Script,
     output_file: File,
     use_node: bool,
-    generated_funcs: Vec<String>
+    generated_funcs: Vec<String>,
+    unique_scope_counter: Box<usize>,
 }
 
 struct TCO {
@@ -19,6 +20,8 @@ struct TCO {
     params: Vec<String>,
     label: String,
 }
+
+const NULL_STRING: &str = "Null(isolate)";
 
 impl CG {
     fn writeln<S>(&mut self, depth: usize, output: S) where S: Into<String> {
@@ -34,9 +37,18 @@ impl CG {
         local_s: S
     ) -> String where S: Into<String> {
         let local = local_s.into();
-        let safe_local = format!("{}_{}", local, scope.len());
+        let safe_local = format!("{}_{}", local, *self.unique_scope_counter);
+        *self.unique_scope_counter += 1;
         scope.insert(local, safe_local.clone());
         safe_local
+    }
+
+    fn generate_debug<S>(
+        &mut self,
+        depth: usize,
+        debug_s: S
+    ) where S: Into<String> {
+        self.writeln(depth, format!("std::cout << \"[DEBUG] {}\" << std::endl;", debug_s.into()));
     }
 
     fn generate_function_declaration(
@@ -94,10 +106,26 @@ impl CG {
         self.writeln(depth, "}\n");
     }
 
+    fn generate_function_value(
+        &mut self,
+        depth: usize,
+        fn_tmp: String,
+        fn_name: String,
+        scope: &mut Scope,
+    ) {
+        let ftpl_tmp = self.register_local(scope, "ftpl");
+        self.writeln(depth, format!("Local<FunctionTemplate> {} = FunctionTemplate::New(isolate, {});",
+                                    ftpl_tmp,
+                                    fn_name));
+        self.writeln(depth, format!("Local<Function> {} = {}->GetFunction();", fn_tmp, ftpl_tmp));
+        self.writeln(depth, format!("{}->SetName(String::NewFromUtf8(isolate, \"{}\"));", fn_tmp, fn_name));
+    }
+
     // TODO: this cannot generate dependencies or all expressions must be treated as such
     fn generate_call_internal(
         &mut self,
         depth: usize,
+        parent: String,
         fn_tmp: String,
         fn_name: String,
         args: Vec<String>,
@@ -126,9 +154,10 @@ impl CG {
             self.writeln(depth, format!("Local<Value> {}[] = {{ {} }};", argv_tmp, args.join(", ")));
 
             let result_tmp = self.register_local(scope, "result");
-            self.writeln(depth, format!("Local<Value> {} = {}->Call(Null(isolate), {}, {});",
+            self.writeln(depth, format!("Local<Value> {} = {}->Call({}, {}, {});",
                                         result_tmp,
                                         fn_tmp,
+                                        parent,
                                         args.len(),
                                         argv_tmp));
             result_tmp
@@ -141,35 +170,36 @@ impl CG {
         &mut self,
         depth: usize,
         expression: &easter::expr::Expr,
-        args: &Vec<easter<>::expr::Expr>,
+        args: &Vec<easter::expr::Expr>,
         scope: &mut Scope,
         tco: &Option<TCO>
     ) -> String {
-        let fn_name = self.generate_expression(depth, expression, scope, &None);
+        let (fn_name, parent) = self.generate_expression(depth, expression, scope, &None);
 
         let args_len = args.len();
         let mut argv_items = Vec::with_capacity(args_len);
         for arg in args.iter() {
-            let arg_holder = self.generate_expression(depth, arg, scope, &None);
+            let (arg_holder, _) = self.generate_expression(depth, arg, scope, &None);
             let tmp = self.register_local(scope, "arg");
-            self.writeln(depth, format!("Local<Value> {} = {};", tmp, arg_holder));
+
+            if self.generated_funcs.contains(&arg_holder) {
+                self.generate_function_value(depth, tmp.clone(), arg_holder, scope);
+            } else {
+                self.writeln(depth, format!("Local<Value> {} = {};", tmp, arg_holder));
+            }
+
             argv_items.push(tmp);
         }
 
         let fn_tmp = self.register_local(scope, "fn");
 
         if self.generated_funcs.contains(&fn_name) {
-            let ftpl_tmp = self.register_local(scope, "ftpl");
-            self.writeln(depth, format!("Local<FunctionTemplate> {} = FunctionTemplate::New(isolate, {});",
-                                        ftpl_tmp,
-                                        fn_name));
-            self.writeln(depth, format!("Local<Function> {} = {}->GetFunction();", fn_tmp, ftpl_tmp));
-            self.writeln(depth, format!("{}->SetName(String::NewFromUtf8(isolate, \"{}\"));", fn_tmp, fn_name));
+            self.generate_function_value(depth, fn_tmp.clone(), fn_name.clone(), scope);
         } else {
             self.writeln(depth, format!("Local<Function> {} = Local<Function>::Cast({});", fn_tmp, fn_name));
         };
 
-        self.generate_call_internal(depth, fn_tmp, fn_name.to_string(), argv_items, scope, tco)
+        self.generate_call_internal(depth, parent, fn_tmp, fn_name.to_string(), argv_items, scope, tco)
     }
 
     fn generate_cpp_value(
@@ -294,8 +324,8 @@ impl CG {
         exp2: &Box<easter::expr::Expr>,
         scope: &mut Scope
     ) -> String {
-        let left = self.generate_expression(depth, &exp1, scope, &None);
-        let right = self.generate_expression(depth, &exp2, scope, &None);
+        let (left, _) = self.generate_expression(depth, &exp1, scope, &None);
+        let (right, _) = self.generate_expression(depth, &exp2, scope, &None);
         match binop.tag {
             easter::punc::BinopTag::Eq => self.generate_bool_op(depth, vec!["String", "Number", "Boolean"], "==", false, left, right, scope),
             easter::punc::BinopTag::NEq => self.generate_bool_op(depth, vec!["String", "Number", "Boolean"], "!=", true, left, right, scope),
@@ -327,11 +357,19 @@ impl CG {
         object: &easter::expr::Expr,
         accessor: &easter::obj::DotKey,
         scope: &mut Scope
-    ) -> String {
-        let exp = self.generate_expression(depth, object, scope, &None);
-        format!("Local<Object>::Cast({})->Get(String::NewFromUtf8(isolate, \"{}\"))",
-                exp,
-                accessor.value)
+    ) -> (String, String) {
+        let (exp, _) = self.generate_expression(depth, object, scope, &None);
+        let result_tmp = self.register_local(scope, "dot_result");
+        let parent_tmp = self.register_local(scope, "dot_parent");
+        let property_tmp = self.register_local(scope, "property");
+        self.writeln(depth, format!("Local<Value> {} = {};", parent_tmp, exp));
+        self.writeln(depth, format!("Local<String> {} = String::NewFromUtf8(isolate, \"{}\");", property_tmp, accessor.value));
+        self.writeln(depth, format!("while ({}->IsObject() && !{}.As<Object>()->HasOwnProperty(isolate->GetCurrentContext(), {}).ToChecked()) {{",
+                                    parent_tmp, parent_tmp, property_tmp));
+        self.writeln(depth + 1, format!("{} = {}.As<Object>()->GetPrototype();", parent_tmp, parent_tmp));
+        self.writeln(depth, "}");
+        self.writeln(depth, format!("Local<Value> {} = {}.As<Object>()->Get(isolate->GetCurrentContext(), {}).ToLocalChecked();", result_tmp, parent_tmp, property_tmp));
+        (result_tmp, parent_tmp)
     }
 
     fn generate_assign(
@@ -364,9 +402,34 @@ impl CG {
                 panic!("Unsupported assign target: {:#?}", assop.tag)
         };
 
-        let body_gen = self.generate_expression(depth, body, scope, &None);
+        let (body_gen, _) = self.generate_expression(depth, body, scope, &None);
 
         format!("{} {} {}", target, op, body_gen)
+    }
+
+    fn generate_array(
+        &mut self,
+        depth: usize,
+        elements: &Vec<Option<easter::expr::Expr>>,
+        scope: &mut Scope
+    ) -> String {
+        let tmp = self.register_local(scope, "array");
+
+        self.writeln(depth, format!("Local<Array> {} = Array::New(isolate, {});", tmp, elements.len()));
+
+        for (i, maybe_arg) in elements.iter().enumerate() {
+            let element = match maybe_arg {
+                Some (arg) => {
+                    let (value, _) = self.generate_expression(depth, arg, scope, &None);
+                    value
+                },
+                None => String::from(NULL_STRING),
+            };
+
+            self.writeln(depth, format!("{}->Set({}, {});", tmp, i, element));
+        }
+
+        tmp
     }
 
     fn generate_expression(
@@ -375,41 +438,43 @@ impl CG {
         expression: &easter::expr::Expr,
         scope: &mut Scope,
         tco: &Option<TCO>
-    ) -> String {
+    ) -> (String, String) {
         match expression {
             &easter::expr::Expr::Call(_, ref name, ref args) =>
-                self.generate_call(depth, name, args, scope, tco),
+                (self.generate_call(depth, name, args, scope, tco), String::from(NULL_STRING)),
             &easter::expr::Expr::Id(ref id) => {
                 let local = id.name.as_ref();
-                match scope.get(local) {
+                (match scope.get(local) {
                     Some (safe_local) => safe_local.clone(),
                     None => match local {
                         "global" => "isolate->GetCurrentContext()->Global()".to_string(),
                         other => format!("isolate->GetCurrentContext()->Global()->Get(String::NewFromUtf8(isolate, \"{}\"))", other),
                     }
-                }
+                }, String::from(NULL_STRING))
             },
             &easter::expr::Expr::String(_, ref string) =>
-                format!("String::NewFromUtf8(isolate, \"{}\")",
+                (format!("String::NewFromUtf8(isolate, \"{}\")",
                         string.value
                         .replace("\n", "\\n")
                         .replace("\t", "\\t")
-                        .replace("\r", "\\r")),
+                        .replace("\r", "\\r")), String::from(NULL_STRING)),
             &easter::expr::Expr::Number(_, ref number) =>
-                format!("Number::New(isolate, {})", number.value),
+                (format!("Number::New(isolate, {})", number.value), String::from(NULL_STRING)),
             &easter::expr::Expr::Binop(_, ref op, ref exp1, ref exp2) =>
-                self.generate_binop(depth, op, exp1, exp2, scope),
+                (self.generate_binop(depth, op, exp1, exp2, scope), String::from(NULL_STRING)),
             &easter::expr::Expr::Dot(_, ref object, ref accessor) =>
                 self.generate_dot(depth, object, accessor, scope),
             &easter::expr::Expr::Assign(_, ref assop, ref target_patt, ref body) =>
-                match target_patt {
+                (match target_patt {
                     &easter::patt::Patt::Simple (ref target) =>
                         self.generate_assign(depth, assop, &target, body, scope),
                     _ =>
                         panic!("Got complex assignment (destructuring): {:#?}", expression)
-                },
-            &easter::expr::Expr::True(_) => "True(isolate)".to_string(),
-            &easter::expr::Expr::False(_) => "False(isolate)".to_string(),
+                }, String::from(NULL_STRING)),
+            &easter::expr::Expr::True(_) => ("True(isolate)".to_string(), String::from(NULL_STRING)),
+            &easter::expr::Expr::False(_) => ("False(isolate)".to_string(), String::from(NULL_STRING)),
+            &easter::expr::Expr::Arr(_, ref elements) =>
+                (self.generate_array(depth, elements, scope), String::from(NULL_STRING)),
             _ =>
                 panic!("Got expression: {:#?}", expression),
         }
@@ -424,7 +489,7 @@ impl CG {
     ) {
         let suffix = match expression {
             &Some (ref exp) => {
-                let generated = self.generate_expression(depth, &exp, scope, &None);
+                let (generated, _) = self.generate_expression(depth, &exp, scope, &None);
                 format!(" = {}", generated)
             },
             _ => "".to_string(),
@@ -455,7 +520,10 @@ impl CG {
         tco: &Option<TCO>
     ) {
         let result = match expression {
-            &Some (ref exp) => self.generate_expression(depth, exp, scope, tco),
+            &Some (ref exp) => {
+                let (res, _) = self.generate_expression(depth, exp, scope, tco);
+                res
+            },
             _ => "v8::Null".to_string()
         };
 
@@ -485,9 +553,10 @@ impl CG {
                                     boolean_tmp,
                                     global_tmp));
 
-        let test_result = self.generate_expression(depth, test, scope, &None);
+        let (test_result, _) = self.generate_expression(depth, test, scope, &None);
         let result = self.generate_call_internal(
             depth,
+            String::from(NULL_STRING),
             boolean_tmp,
             "Boolean".to_string(),
             vec![test_result],
@@ -548,7 +617,7 @@ impl CG {
     ) {
         match statement {
             &easter::stmt::Stmt::Expr(_, ref e, _) => {
-                let gen = self.generate_expression(depth, e, scope, tco);
+                let (gen, _) = self.generate_expression(depth, e, scope, tco);
                 self.writeln(depth, format!("{};", gen));
             },
             &easter::stmt::Stmt::Var(_, ref destructors, _) => {
@@ -593,7 +662,8 @@ impl CG {
 
     fn generate_prefix(&mut self) {
         if self.use_node {
-            self.writeln(0, "#include <string>\n");
+            self.writeln(0, "#include <string>");
+            self.writeln(0, "#include <iostream>");
 
             self.writeln(0, "\n#include <node.h>\n");
         } else {
@@ -604,6 +674,7 @@ impl CG {
             self.writeln(0, "#include <v8.h>\n");
         }
 
+        self.writeln(0, "using v8::Array;");
         self.writeln(0, "using v8::Boolean;");
         self.writeln(0, "using v8::Context;");
         self.writeln(0, "using v8::Exception;");
@@ -702,6 +773,7 @@ int main(int argc, char* argv[]) {
             ast,
             output_file: File::create(path).expect(error.as_str()),
             generated_funcs: Vec::new(),
+            unique_scope_counter: Box::new(0),
         }
     }
 }
