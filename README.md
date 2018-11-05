@@ -14,7 +14,8 @@ $ cargo build
 $ cargo build
 $ ./target/debug/jsc example/hello_world.js
 $ node build/hello_world.js
-hey there%
+hey there
+
 ```
 
 ### Features
@@ -22,20 +23,20 @@ hey there%
 * Function calls
   * Tail-call optimization
 * Primitive numeric operations
+* Arrays
+* Numbers
+* Strings
 
 #### Not (yet) supported
 
+* Prototype functions
 * Objects
-* Arrays
 * Nested functions
-* First-class functions
 * Closures
-* Implicit global object context
 * And/or operators
 
 ### Todo
 
-* [ ] Track/map locals in a scope dictionary
 * [ ] Add native target (no Node)
 
 ### Code produced

@@ -1,16 +1,18 @@
 use std::fs::File;
 use std::io::Write;
 use std::iter;
+use std::collections::HashMap;
 
 extern crate easter;
+
+type Scope = HashMap<String, String>;
 
 pub struct CG {
     ast: easter::prog::Script,
     output_file: File,
-    tmp_count: u64,
-    tmps: Vec<String>,
     use_node: bool,
-    generated_funcs: Vec<String>
+    generated_funcs: Vec<String>,
+    unique_scope_counter: Box<usize>,
 }
 
 struct TCO {
@@ -19,27 +21,34 @@ struct TCO {
     label: String,
 }
 
+const NULL_STRING: &str = "Null(isolate)";
+
 impl CG {
     fn writeln<S>(&mut self, depth: usize, output: S) where S: Into<String> {
-        let indent = 2; // spaces
-        let indents = iter::repeat(" ").take(depth * indent).collect::<String>();
+        let spaces = 2;
+        let indents = iter::repeat(" ").take(depth * spaces).collect::<String>();
         let line = format!("{}{}\n", indents, output.into());
         self.output_file.write_all(line.as_bytes()).expect("failed to write")
     }
 
-    fn generate_tmp<S>(&mut self, prefix_s: S) -> String where S: Into<String> {
-        let prefix = prefix_s.into();
-        self.tmp_count = self.tmp_count + 1;
-        let tmp = format!("{}_{}", prefix, self.tmp_count);
-        if self.tmps.contains(&tmp) {
-            self.generate_tmp(prefix)
-        } else {
-            tmp
-        }
+    fn register_local<S>(
+        &mut self,
+        scope: &mut Scope,
+        local_s: S
+    ) -> String where S: Into<String> {
+        let local = local_s.into();
+        let safe_local = format!("{}_{}", local, *self.unique_scope_counter);
+        *self.unique_scope_counter += 1;
+        scope.insert(local, safe_local.clone());
+        safe_local
     }
 
-    fn register_tmp<S>(&mut self, tmp: S) where S: Into<String> {
-        self.tmps.push(tmp.into());
+    fn generate_debug<S>(
+        &mut self,
+        depth: usize,
+        debug_s: S
+    ) where S: Into<String> {
+        self.writeln(depth, format!("std::cout << \"[DEBUG] {}\" << std::endl;", debug_s.into()));
     }
 
     fn generate_function_declaration(
@@ -48,18 +57,20 @@ impl CG {
         id: &easter::id::Id,
         params: &easter::fun::Params,
         body: &Vec<easter::stmt::StmtListItem>,
+        scope: &mut Scope,
         _: &Option<TCO>
     ) {
         let name = if id.is_some() {
-            let id = id.name.as_ref();
-            if id == "main" {
-                "jsc_main"
+            let local = id.name.as_ref();
+            if local == "main" {
+                "jsc_main".to_string()
             } else {
-                self.generated_funcs.push(id.to_string());
-                id
+                let safe = self.register_local(scope, local);
+                self.generated_funcs.push(safe.clone());
+                safe
             }
         } else {
-            "lambda"
+            "lambda".to_string()
         };
 
         self.writeln(depth, format!("void {}(const FunctionCallbackInfo<Value>& args) {{", name));
@@ -69,11 +80,12 @@ impl CG {
         for (i, param) in params.list.iter().enumerate() {
             match param {
                 &easter::patt::Patt::Simple (ref id) => {
-                    param_strings.push(id.name.as_ref().to_string());
+                    let safe_local = self.register_local(scope, id.name.as_ref());
+                    param_strings.push(safe_local.clone());
                     self.writeln(
                         depth + 1,
                         format!("Local<Value> {} = args[{}];",
-                                id.name.as_ref(),
+                                safe_local,
                                 i));
                 },
                 _ =>
@@ -81,10 +93,11 @@ impl CG {
             }
         }
 
-        let tail_recurse_label = self.generate_tmp("tail_recurse");
+        let tail_recurse_label = self.register_local(scope, "tail_recurse");
         self.writeln(0, format!("{}:", tail_recurse_label));
 
-        self.generate_statements(depth + 1, body, &Some (TCO {
+        let new_scope = &mut scope.clone();
+        self.generate_statements(depth + 1, body, new_scope, &Some (TCO {
             name: name.to_string(),
             label: tail_recurse_label,
             params: param_strings
@@ -93,13 +106,30 @@ impl CG {
         self.writeln(depth, "}\n");
     }
 
-    // TODO: this cannot generate dependencies or all expressions must be treated as such
-    fn generate_call_internal(
+    fn generate_function_value(
         &mut self,
         depth: usize,
         fn_tmp: String,
         fn_name: String,
+        scope: &mut Scope,
+    ) {
+        let ftpl_tmp = self.register_local(scope, "ftpl");
+        self.writeln(depth, format!("Local<FunctionTemplate> {} = FunctionTemplate::New(isolate, {});",
+                                    ftpl_tmp,
+                                    fn_name));
+        self.writeln(depth, format!("Local<Function> {} = {}->GetFunction();", fn_tmp, ftpl_tmp));
+        self.writeln(depth, format!("{}->SetName(String::NewFromUtf8(isolate, \"{}\"));", fn_tmp, fn_name));
+    }
+
+    // TODO: this cannot generate dependencies or all expressions must be treated as such
+    fn generate_call_internal(
+        &mut self,
+        depth: usize,
+        parent: String,
+        fn_tmp: String,
+        fn_name: String,
         args: Vec<String>,
+        scope: &mut Scope,
         tco: &Option<TCO>
     ) -> String {
         let non_tco = match tco {
@@ -120,13 +150,14 @@ impl CG {
         };
 
         if non_tco {
-            let argv_tmp = self.generate_tmp("argv");
+            let argv_tmp = self.register_local(scope, "argv");
             self.writeln(depth, format!("Local<Value> {}[] = {{ {} }};", argv_tmp, args.join(", ")));
 
-            let result_tmp = self.generate_tmp("result");
-            self.writeln(depth, format!("Local<Value> {} = {}->Call(Null(isolate), {}, {});",
+            let result_tmp = self.register_local(scope, "result");
+            self.writeln(depth, format!("Local<Value> {} = {}->Call({}, {}, {});",
                                         result_tmp,
                                         fn_tmp,
+                                        parent,
                                         args.len(),
                                         argv_tmp));
             result_tmp
@@ -139,34 +170,36 @@ impl CG {
         &mut self,
         depth: usize,
         expression: &easter::expr::Expr,
-        args: &Vec<easter<>::expr::Expr>,
+        args: &Vec<easter::expr::Expr>,
+        scope: &mut Scope,
         tco: &Option<TCO>
     ) -> String {
-        let fn_name = self.generate_expression(depth, expression, &None);
+        let (fn_name, parent) = self.generate_expression(depth, expression, scope, &None);
 
         let args_len = args.len();
         let mut argv_items = Vec::with_capacity(args_len);
         for arg in args.iter() {
-            let arg_holder = self.generate_expression(depth, arg, &None);
-            let tmp = self.generate_tmp("arg");
-            self.writeln(depth, format!("Local<Value> {} = {};", tmp, arg_holder));
+            let (arg_holder, _) = self.generate_expression(depth, arg, scope, &None);
+            let tmp = self.register_local(scope, "arg");
+
+            if self.generated_funcs.contains(&arg_holder) {
+                self.generate_function_value(depth, tmp.clone(), arg_holder, scope);
+            } else {
+                self.writeln(depth, format!("Local<Value> {} = {};", tmp, arg_holder));
+            }
+
             argv_items.push(tmp);
         }
 
-        let fn_tmp = self.generate_tmp("fn");
-        // Should check only within this scope?
+        let fn_tmp = self.register_local(scope, "fn");
+
         if self.generated_funcs.contains(&fn_name) {
-            let ftpl_tmp = self.generate_tmp("ftpl");
-            self.writeln(depth, format!("Local<FunctionTemplate> {} = FunctionTemplate::New(isolate, {});",
-                                        ftpl_tmp,
-                                        fn_name));
-            self.writeln(depth, format!("Local<Function> {} = {}->GetFunction();", fn_tmp, ftpl_tmp));
-            self.writeln(depth, format!("{}->SetName(String::NewFromUtf8(isolate, \"{}\"));", fn_tmp, fn_name));
+            self.generate_function_value(depth, fn_tmp.clone(), fn_name.clone(), scope);
         } else {
             self.writeln(depth, format!("Local<Function> {} = Local<Function>::Cast({});", fn_tmp, fn_name));
-        }
+        };
 
-        self.generate_call_internal(depth, fn_tmp, fn_name, argv_items, tco)
+        self.generate_call_internal(depth, parent, fn_tmp, fn_name.to_string(), argv_items, scope, tco)
     }
 
     fn generate_cpp_value(
@@ -174,10 +207,11 @@ impl CG {
         depth: usize,
         typ: String,
         value: String,
+        scope: &mut Scope
     ) -> String {
         if typ == "String" {
-            let utf8value_tmp = self.generate_tmp("utf8value_tmp");
-            let string_tmp = self.generate_tmp("string_tmp");
+            let utf8value_tmp = self.register_local(scope, "utf8value_tmp");
+            let string_tmp = self.register_local(scope, "string_tmp");
             self.writeln(depth, format!("String::Utf8Value {}({});", utf8value_tmp, value.clone()));
             self.writeln(depth, format!("std::string {}(*{});", string_tmp, utf8value_tmp));
             string_tmp
@@ -194,13 +228,14 @@ impl CG {
         typ: String,
         fail_case: String,
         left: String,
-        right: String
+        right: String,
+        scope: &mut Scope
     ) -> String {
         let check = format!("{}->Is{}() || {}->Is{}()", left, typ, right, typ);
         let case = format!("{} {} {}",
-                           self.generate_cpp_value(depth, typ.clone(), left.clone()),
+                           self.generate_cpp_value(depth, typ.clone(), left.clone(), scope),
                            op,
-                           self.generate_cpp_value(depth, typ, right.clone()));
+                           self.generate_cpp_value(depth, typ, right.clone(), scope));
         format!("({}) ? Boolean::New(isolate, {}) : ({})", check, case, fail_case)
     }
 
@@ -212,13 +247,14 @@ impl CG {
         default_case: bool,
         left: String,
         right: String,
+        scope: &mut Scope
     ) -> String {
         // TODO: throw exception?
         let mut check_and_op = if default_case { "True(isolate)" } else { "False(isolate)" }.to_string();
         for typ in types.iter() {
             // TODO: avoid the clones?
             check_and_op = self.generate_check_and_op(
-                depth, op, typ.to_string(), check_and_op, left.clone(), right.clone());
+                depth, op, typ.to_string(), check_and_op, left.clone(), right.clone(), scope);
         }
 
         check_and_op
@@ -232,15 +268,16 @@ impl CG {
         default_case: bool,
         left: String,
         right: String,
+        scope: &mut Scope
     ) -> String {
         let mut check_and_op = if default_case { "True(isolate)" } else { "False(isolate)" }.to_string();
         for typ in types.iter() {
             // TODO: avoid all the clones?
             let check = format!("{}->Is{}() && {}->Is{}()", left.clone(), typ, right.clone(), typ);
             let case = format!("{} {} {}",
-                               self.generate_cpp_value(depth, typ.to_string(), left.clone()),
+                               self.generate_cpp_value(depth, typ.to_string(), left.clone(), scope),
                                op,
-                               self.generate_cpp_value(depth, typ.to_string(), right.clone()));
+                               self.generate_cpp_value(depth, typ.to_string(), right.clone(), scope));
             check_and_op = format!("({}) ? Boolean::New(isolate, {}) : ({})", check, case, check_and_op)
         }
 
@@ -251,7 +288,7 @@ impl CG {
         &mut self,
         op: &str,
         left: String,
-        right: String,
+        right: String
     ) -> String {
         let number_check = format!("{}->IsNumber() || {}->IsNumber()", left, right);
         let number_case = format!("Number::New(isolate, {}->ToNumber(isolate)->Value() {} {}->ToNumber(isolate)->Value())", left, op, right);
@@ -284,15 +321,16 @@ impl CG {
         depth: usize,
         binop: &easter::punc::Binop,
         exp1: &Box<easter::expr::Expr>,
-        exp2: &Box<easter::expr::Expr>
+        exp2: &Box<easter::expr::Expr>,
+        scope: &mut Scope
     ) -> String {
-        let left = self.generate_expression(depth, &exp1, &None);
-        let right = self.generate_expression(depth, &exp2, &None);
+        let (left, _) = self.generate_expression(depth, &exp1, scope, &None);
+        let (right, _) = self.generate_expression(depth, &exp2, scope, &None);
         match binop.tag {
-            easter::punc::BinopTag::Eq => self.generate_bool_op(depth, vec!["String", "Number", "Boolean"], "==", false, left, right),
-            easter::punc::BinopTag::NEq => self.generate_bool_op(depth, vec!["String", "Number", "Boolean"], "!=", true, left, right),
-            easter::punc::BinopTag::StrictEq => self.generate_strict_bool_op(depth, vec!["String", "Number", "Boolean"], "==", false, left, right),
-            easter::punc::BinopTag::StrictNEq => self.generate_strict_bool_op(depth, vec!["String", "Number", "Boolean"], "!=", true, left, right),
+            easter::punc::BinopTag::Eq => self.generate_bool_op(depth, vec!["String", "Number", "Boolean"], "==", false, left, right, scope),
+            easter::punc::BinopTag::NEq => self.generate_bool_op(depth, vec!["String", "Number", "Boolean"], "!=", true, left, right, scope),
+            easter::punc::BinopTag::StrictEq => self.generate_strict_bool_op(depth, vec!["String", "Number", "Boolean"], "==", false, left, right, scope),
+            easter::punc::BinopTag::StrictNEq => self.generate_strict_bool_op(depth, vec!["String", "Number", "Boolean"], "!=", true, left, right, scope),
             easter::punc::BinopTag::Plus => self.generate_plus(left, right),
             easter::punc::BinopTag::Minus => self.generate_number_check_and_op("-", left, right),
             easter::punc::BinopTag::Times => self.generate_number_check_and_op("*", left, right),
@@ -304,10 +342,10 @@ impl CG {
             easter::punc::BinopTag::LShift => self.generate_number_check_and_op("<<", left, right),
             easter::punc::BinopTag::RShift => self.generate_number_check_and_op(">>", left, right),
             easter::punc::BinopTag::URShift => self.generate_number_check_and_op(">>>", left, right),
-            easter::punc::BinopTag::LEq => self.generate_bool_op(depth, vec!["String", "Number"], "<=", false, left, right),
-            easter::punc::BinopTag::GEq => self.generate_bool_op(depth, vec!["String", "Number"], ">=", false, left, right),
-            easter::punc::BinopTag::Lt => self.generate_bool_op(depth, vec!["String", "Number"], "<", false, left, right),
-            easter::punc::BinopTag::Gt => self.generate_bool_op(depth, vec!["String", "Number"], ">", false, left, right),
+            easter::punc::BinopTag::LEq => self.generate_bool_op(depth, vec!["String", "Number"], "<=", false, left, right, scope),
+            easter::punc::BinopTag::GEq => self.generate_bool_op(depth, vec!["String", "Number"], ">=", false, left, right, scope),
+            easter::punc::BinopTag::Lt => self.generate_bool_op(depth, vec!["String", "Number"], "<", false, left, right, scope),
+            easter::punc::BinopTag::Gt => self.generate_bool_op(depth, vec!["String", "Number"], ">", false, left, right, scope),
             // TODO: support In and Instanceof
             _ => panic!("Unsupported operator: {:?}", binop.tag)
         }
@@ -317,12 +355,21 @@ impl CG {
         &mut self,
         depth: usize,
         object: &easter::expr::Expr,
-        accessor: &easter::obj::DotKey
-    ) -> String {
-        let exp = self.generate_expression(depth, object, &None);
-        format!("Local<Object>::Cast({})->Get(String::NewFromUtf8(isolate, \"{}\"))",
-                exp,
-                accessor.value)
+        accessor: &easter::obj::DotKey,
+        scope: &mut Scope
+    ) -> (String, String) {
+        let (exp, _) = self.generate_expression(depth, object, scope, &None);
+        let result_tmp = self.register_local(scope, "dot_result");
+        let parent_tmp = self.register_local(scope, "dot_parent");
+        let property_tmp = self.register_local(scope, "property");
+        self.writeln(depth, format!("Local<Value> {} = {};", parent_tmp, exp));
+        self.writeln(depth, format!("Local<String> {} = String::NewFromUtf8(isolate, \"{}\");", property_tmp, accessor.value));
+        self.writeln(depth, format!("while ({}->IsObject() && !{}.As<Object>()->HasOwnProperty(isolate->GetCurrentContext(), {}).ToChecked()) {{",
+                                    parent_tmp, parent_tmp, property_tmp));
+        self.writeln(depth + 1, format!("{} = {}.As<Object>()->GetPrototype();", parent_tmp, parent_tmp));
+        self.writeln(depth, "}");
+        self.writeln(depth, format!("Local<Value> {} = {}.As<Object>()->Get(isolate->GetCurrentContext(), {}).ToLocalChecked();", result_tmp, parent_tmp, property_tmp));
+        (result_tmp, parent_tmp)
     }
 
     fn generate_assign(
@@ -330,7 +377,8 @@ impl CG {
         depth: usize,
         assop: &easter::punc::Assop,
         patt: &easter::patt::AssignTarget,
-        body: &easter::expr::Expr
+        body: &easter::expr::Expr,
+        scope: &mut Scope
     ) -> String {
         let op = match assop.tag {
             easter::punc::AssopTag::Eq => "=",
@@ -349,52 +397,87 @@ impl CG {
 
         let target: String = match patt {
             &easter::patt::AssignTarget::Id (ref id) =>
-                id.name.as_ref().to_string(),
+                match scope.get(id.name.as_ref()) {
+                    Some (name) => name.clone(),
+                    None => panic!("Cannot assign to undeclared variable, {}", id.name.as_ref()),
+                },
             _ =>
                 panic!("Unsupported assign target: {:#?}", assop.tag)
         };
 
-        let body_gen = self.generate_expression(depth, body, &None);
+        let (body_gen, _) = self.generate_expression(depth, body, scope, &None);
 
         format!("{} {} {}", target, op, body_gen)
+    }
+
+    fn generate_array(
+        &mut self,
+        depth: usize,
+        elements: &Vec<Option<easter::expr::Expr>>,
+        scope: &mut Scope
+    ) -> String {
+        let tmp = self.register_local(scope, "array");
+
+        self.writeln(depth, format!("Local<Array> {} = Array::New(isolate, {});", tmp, elements.len()));
+
+        for (i, maybe_arg) in elements.iter().enumerate() {
+            let element = match maybe_arg {
+                Some (arg) => {
+                    let (value, _) = self.generate_expression(depth, arg, scope, &None);
+                    value
+                },
+                None => String::from(NULL_STRING),
+            };
+
+            self.writeln(depth, format!("{}->Set({}, {});", tmp, i, element));
+        }
+
+        tmp
     }
 
     fn generate_expression(
         &mut self,
         depth: usize,
         expression: &easter::expr::Expr,
+        scope: &mut Scope,
         tco: &Option<TCO>
-    ) -> String {
+    ) -> (String, String) {
         match expression {
             &easter::expr::Expr::Call(_, ref name, ref args) =>
-                self.generate_call(depth, name, args, tco),
-            &easter::expr::Expr::Id(ref id) =>
-                match id.name.as_ref() {
-                    "console" => "isolate->GetCurrentContext()->Global()->Get(String::NewFromUtf8(isolate, \"console\"))",
-                    "global" => "isolate->GetCurrentContext()->Global()",
-                    other => other
-                }.to_string(),
+                (self.generate_call(depth, name, args, scope, tco), String::from(NULL_STRING)),
+            &easter::expr::Expr::Id(ref id) => {
+                let local = id.name.as_ref();
+                (match scope.get(local) {
+                    Some (safe_local) => safe_local.clone(),
+                    None => match local {
+                        "global" => "isolate->GetCurrentContext()->Global()".to_string(),
+                        other => format!("isolate->GetCurrentContext()->Global()->Get(String::NewFromUtf8(isolate, \"{}\"))", other),
+                    }
+                }, String::from(NULL_STRING))
+            },
             &easter::expr::Expr::String(_, ref string) =>
-                format!("String::NewFromUtf8(isolate, \"{}\")",
+                (format!("String::NewFromUtf8(isolate, \"{}\")",
                         string.value
                         .replace("\n", "\\n")
                         .replace("\t", "\\t")
-                        .replace("\r", "\\r")),
+                        .replace("\r", "\\r")), String::from(NULL_STRING)),
             &easter::expr::Expr::Number(_, ref number) =>
-                format!("Number::New(isolate, {})", number.value),
+                (format!("Number::New(isolate, {})", number.value), String::from(NULL_STRING)),
             &easter::expr::Expr::Binop(_, ref op, ref exp1, ref exp2) =>
-                self.generate_binop(depth, op, exp1, exp2),
+                (self.generate_binop(depth, op, exp1, exp2, scope), String::from(NULL_STRING)),
             &easter::expr::Expr::Dot(_, ref object, ref accessor) =>
-                self.generate_dot(depth, object, accessor),
+                self.generate_dot(depth, object, accessor, scope),
             &easter::expr::Expr::Assign(_, ref assop, ref target_patt, ref body) =>
-                match target_patt {
+                (match target_patt {
                     &easter::patt::Patt::Simple (ref target) =>
-                        self.generate_assign(depth, assop, &target, body),
+                        self.generate_assign(depth, assop, &target, body, scope),
                     _ =>
                         panic!("Got complex assignment (destructuring): {:#?}", expression)
-                },
-            &easter::expr::Expr::True(_) => "True(isolate)".to_string(),
-            &easter::expr::Expr::False(_) => "False(isolate)".to_string(),
+                }, String::from(NULL_STRING)),
+            &easter::expr::Expr::True(_) => ("True(isolate)".to_string(), String::from(NULL_STRING)),
+            &easter::expr::Expr::False(_) => ("False(isolate)".to_string(), String::from(NULL_STRING)),
+            &easter::expr::Expr::Arr(_, ref elements) =>
+                (self.generate_array(depth, elements, scope), String::from(NULL_STRING)),
             _ =>
                 panic!("Got expression: {:#?}", expression),
         }
@@ -404,24 +487,31 @@ impl CG {
         &mut self,
         depth: usize,
         id: &easter::id::Id,
-        expression: &Option<easter::expr::Expr>
+        expression: &Option<easter::expr::Expr>,
+        scope: &mut Scope
     ) {
         let suffix = match expression {
             &Some (ref exp) => {
-                let generated = self.generate_expression(depth, &exp, &None);
+                let (generated, _) = self.generate_expression(depth, &exp, scope, &None);
                 format!(" = {}", generated)
             },
             _ => "".to_string(),
         };
-        let tmp = id.name.as_ref();
-        self.register_tmp(tmp);
-        self.writeln(depth, format!("Local<Value> {}{};", tmp, suffix));
+        let safe_name = self.register_local(scope, id.name.as_ref());
+        self.writeln(depth, format!("Local<Value> {}{};", safe_name, suffix));
     }
 
-    fn generate_destructor(&mut self, depth: usize, destructor: &easter::decl::Dtor) {
+    fn generate_destructor(
+        &mut self,
+        depth: usize,
+        destructor: &easter::decl::Dtor,
+        scope: &mut Scope
+    ) {
         match destructor {
-            &easter::decl::Dtor::Simple(_, ref id, ref expr_opt) => self.generate_declaration(depth, id, expr_opt),
-            _ => panic!("found destructor: {:#?}", destructor),
+            &easter::decl::Dtor::Simple(_, ref id, ref expr) =>
+                self.generate_declaration(depth, id, expr, scope),
+            _ =>
+                panic!("found destructor: {:#?}", destructor),
         }
     }
 
@@ -429,10 +519,14 @@ impl CG {
         &mut self,
         depth: usize,
         expression: &Option<easter::expr::Expr>,
+        scope: &mut Scope,
         tco: &Option<TCO>
     ) {
         let result = match expression {
-            &Some (ref exp) => self.generate_expression(depth, exp, tco),
+            &Some (ref exp) => {
+                let (res, _) = self.generate_expression(depth, exp, scope, tco);
+                res
+            },
             _ => "v8::Null".to_string()
         };
 
@@ -446,11 +540,12 @@ impl CG {
     fn generate_test(
         &mut self,
         depth: usize,
-        test: &easter::expr::Expr
+        test: &easter::expr::Expr,
+        scope: &mut Scope
     ) -> String {
-        let ctx_tmp = self.generate_tmp("ctx");
-        let global_tmp = self.generate_tmp("global");
-        let boolean_tmp = self.generate_tmp("Boolean");
+        let ctx_tmp = self.register_local(scope, "ctx");
+        let global_tmp = self.register_local(scope, "global");
+        let boolean_tmp = self.register_local(scope, "Boolean");
 
         self.writeln(depth, format!("Local<Context> {} = isolate->GetCurrentContext();",
                                     ctx_tmp));
@@ -461,12 +556,14 @@ impl CG {
                                     boolean_tmp,
                                     global_tmp));
 
-        let test_result = self.generate_expression(depth, test, &None);
+        let (test_result, _) = self.generate_expression(depth, test, scope, &None);
         let result = self.generate_call_internal(
             depth,
+            String::from(NULL_STRING),
             boolean_tmp,
             "Boolean".to_string(),
             vec![test_result],
+            scope,
             &None);
 
         result
@@ -478,18 +575,19 @@ impl CG {
         test: &easter::expr::Expr,
         ok: &easter::stmt::Stmt,
         nok: &Option<Box<easter::stmt::Stmt>>,
+        scope: &mut Scope,
         tco: &Option<TCO>
     ) {
-        let result = self.generate_test(depth, test);
+        let result = self.generate_test(depth, test, scope);
 
         self.writeln(depth, format!("if ({}->ToBoolean()->Value()) {{", result));
-        self.generate_statement(depth + 1, ok, tco);
+        self.generate_statement(depth + 1, ok, scope, tco);
         self.writeln(depth + 1, "return;");
 
         match nok {
             &Some (ref stmt) => {
                 self.writeln(depth, "} else {");
-                self.generate_statement(depth + 1, stmt, tco);
+                self.generate_statement(depth + 1, stmt, scope, tco);
             },
             _ => ()
         };
@@ -502,12 +600,13 @@ impl CG {
         depth: usize,
         test: &easter::expr::Expr,
         body: &Box<easter::stmt::Stmt>,
+        scope: &mut Scope,
         tco: &Option<TCO>
     ) {
-        let result = self.generate_test(depth, test);
+        let result = self.generate_test(depth, test, scope);
         self.writeln(depth, format!("while ({}->ToBoolean()->Value()) {{", result));
-        self.generate_statement(depth + 1, body, tco);
-        let next = self.generate_test(depth + 1, test);
+        self.generate_statement(depth + 1, body, scope, tco);
+        let next = self.generate_test(depth + 1, test, scope);
         self.writeln(depth + 1, format!("{} = {};", result, next));
         self.writeln(depth, "}");
     }
@@ -516,26 +615,27 @@ impl CG {
         &mut self,
         depth: usize,
         statement: &easter::stmt::Stmt,
+        scope: &mut Scope,
         tco: &Option<TCO>
     ) {
         match statement {
             &easter::stmt::Stmt::Expr(_, ref e, _) => {
-                let gen = self.generate_expression(depth, e, tco);
+                let (gen, _) = self.generate_expression(depth, e, scope, tco);
                 self.writeln(depth, format!("{};", gen));
             },
             &easter::stmt::Stmt::Var(_, ref destructors, _) => {
                 for destructor in destructors {
-                    self.generate_destructor(depth, destructor);
+                    self.generate_destructor(depth, destructor, scope);
                 }
             },
             &easter::stmt::Stmt::Return(_, ref result, _) =>
-                self.generate_return(depth, result, tco),
+                self.generate_return(depth, result, scope, tco),
             &easter::stmt::Stmt::If(_, ref test, ref ok, ref nok) =>
-                self.generate_condition(depth, test, ok, nok, tco),
+                self.generate_condition(depth, test, ok, nok, scope, tco),
             &easter::stmt::Stmt::While(_, ref test, ref body) =>
-                self.generate_while(depth, test, body, tco),
+                self.generate_while(depth, test, body, scope, tco),
             &easter::stmt::Stmt::Block(_, ref statements) =>
-                self.generate_statements(depth, statements, tco),
+                self.generate_statements(depth, statements, scope, tco),
             _ => panic!("found stmt: {:#?}", statement),
         }
     }
@@ -544,6 +644,7 @@ impl CG {
         &mut self,
         depth: usize,
         ast: &Vec<easter::stmt::StmtListItem>,
+        scope: &mut Scope,
         tco: &Option<TCO>
     ) {
         let len = ast.len();
@@ -553,18 +654,19 @@ impl CG {
                     easter::decl::Decl::Fun(
                         easter::fun::Fun { ref id, ref params, ref body, .. })) =>
                     match id {
-                        &Some(ref id) => self.generate_function_declaration(depth, id, params, body, &None),
+                        &Some(ref id) => self.generate_function_declaration(depth, id, params, body, scope, &None),
                         _ => panic!("anonymous function declarations not supported")
                     },
                 &easter::stmt::StmtListItem::Stmt(ref s) =>
-                    self.generate_statement(depth, s, if i == len - 1 { tco } else { &None })
+                    self.generate_statement(depth, s, scope, if i == len - 1 { tco } else { &None })
             }
         }
     }
 
     fn generate_prefix(&mut self) {
         if self.use_node {
-            self.writeln(0, "#include <string>\n");
+            self.writeln(0, "#include <string>");
+            self.writeln(0, "#include <iostream>");
 
             self.writeln(0, "\n#include <node.h>\n");
         } else {
@@ -575,6 +677,7 @@ impl CG {
             self.writeln(0, "#include <v8.h>\n");
         }
 
+        self.writeln(0, "using v8::Array;");
         self.writeln(0, "using v8::Boolean;");
         self.writeln(0, "using v8::Context;");
         self.writeln(0, "using v8::Exception;");
@@ -655,7 +758,7 @@ int main(int argc, char* argv[]) {
             body.push(self.ast.body.remove(0));
         }
 
-        self.generate_statements(0, &body, &None);
+        self.generate_statements(0, &body, &mut HashMap::new(), &None);
         self.generate_postfix();
     }
 
@@ -672,9 +775,8 @@ int main(int argc, char* argv[]) {
             use_node,
             ast,
             output_file: File::create(path).expect(error.as_str()),
-            tmp_count: 0,
-            tmps: Vec::new(),
-            generated_funcs: Vec::new()
+            generated_funcs: Vec::new(),
+            unique_scope_counter: Box::new(0),
         }
     }
 }
