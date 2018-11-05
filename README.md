@@ -65,10 +65,11 @@ Gets compiled to:
 
 ```cpp
 #include <string>
-
+#include <iostream>
 
 #include <node.h>
 
+using v8::Array;
 using v8::Boolean;
 using v8::Context;
 using v8::Exception;
@@ -85,68 +86,74 @@ using v8::False;
 using v8::True;
 using v8::Value;
 
-void fib(const FunctionCallbackInfo<Value>& args) {
+void fib_0(const FunctionCallbackInfo<Value>& args) {
   Isolate* isolate = args.GetIsolate();
-  Local<Value> n = args[0];
-  Local<Value> a = args[1];
-  Local<Value> b = args[2];
-tail_recurse_1:
-  Local<Context> ctx_2 = isolate->GetCurrentContext();
-  Local<Object> global_3 = ctx_2->Global();
-  Local<Function> Boolean_4 = Local<Function>::Cast(global_3->Get(String::NewFromUtf8(isolate, "Boolean")));
-  String::Utf8Value utf8value_tmp_5(n);
-  std::string string_tmp_6(*utf8value_tmp_5);
-  String::Utf8Value utf8value_tmp_7(Number::New(isolate, 0));
-  std::string string_tmp_8(*utf8value_tmp_7);
-  Local<Value> argv_9[] = { (n->IsBoolean() || Number::New(isolate, 0)->IsBoolean()) ? Boolean::New(isolate, n->ToBoolean(isolate)->Value() == Number::New(isolate, 0)->ToBoolean(isolate)->Value()) : ((n->IsNumber() || Number::New(isolate, 0)->IsNumber()) ? Boolean::New(isolate, n->ToNumber(isolate)->Value() == Number::New(isolate, 0)->ToNumber(isolate)->Value()) : ((n->IsString() || Number::New(isolate, 0)->IsString()) ? Boolean::New(isolate, string_tmp_6 == string_tmp_8) : (False(isolate)))) };
-  Local<Value> result_10 = Boolean_4->Call(Null(isolate), 1, argv_9);
-  if (result_10->ToBoolean()->Value()) {
-    args.GetReturnValue().Set(a);
+  Local<Value> n_1 = args[0];
+  Local<Value> a_2 = args[1];
+  Local<Value> b_3 = args[2];
+tail_recurse_4:
+  Local<Context> ctx_5 = isolate->GetCurrentContext();
+  Local<Object> global_6 = ctx_5->Global();
+  Local<Function> Boolean_7 = Local<Function>::Cast(global_6->Get(String::NewFromUtf8(isolate, "Boolean")));
+  String::Utf8Value utf8value_tmp_8(n_1);
+  std::string string_tmp_9(*utf8value_tmp_8);
+  String::Utf8Value utf8value_tmp_10(Number::New(isolate, 0));
+  std::string string_tmp_11(*utf8value_tmp_10);
+  Local<Value> argv_12[] = { (n_1->IsBoolean() || Number::New(isolate, 0)->IsBoolean()) ? Boolean::New(isolate, n_1->ToBoolean(isolate)->Value() == Number::New(isolate, 0)->ToBoolean(isolate)->Value()) : ((n_1->IsNumber() || Number::New(isolate, 0)->IsNumber()) ? Boolean::New(isolate, n_1->ToNumber(isolate)->Value() == Number::New(isolate, 0)->ToNumber(isolate)->Value()) : ((n_1->IsString() || Number::New(isolate, 0)->IsString()) ? Boolean::New(isolate, string_tmp_9 == string_tmp_11) : (False(isolate)))) };
+  Local<Value> result_13 = Boolean_7->Call(Null(isolate), 1, argv_12);
+  if (result_13->ToBoolean()->Value()) {
+    args.GetReturnValue().Set(a_2);
     return;
     return;
   }
-  Local<Context> ctx_11 = isolate->GetCurrentContext();
-  Local<Object> global_12 = ctx_11->Global();
-  Local<Function> Boolean_13 = Local<Function>::Cast(global_12->Get(String::NewFromUtf8(isolate, "Boolean")));
-  String::Utf8Value utf8value_tmp_14(n);
-  std::string string_tmp_15(*utf8value_tmp_14);
-  String::Utf8Value utf8value_tmp_16(Number::New(isolate, 1));
-  std::string string_tmp_17(*utf8value_tmp_16);
-  Local<Value> argv_18[] = { (n->IsBoolean() || Number::New(isolate, 1)->IsBoolean()) ? Boolean::New(isolate, n->ToBoolean(isolate)->Value() == Number::New(isolate, 1)->ToBoolean(isolate)->Value()) : ((n->IsNumber() || Number::New(isolate, 1)->IsNumber()) ? Boolean::New(isolate, n->ToNumber(isolate)->Value() == Number::New(isolate, 1)->ToNumber(isolate)->Value()) : ((n->IsString() || Number::New(isolate, 1)->IsString()) ? Boolean::New(isolate, string_tmp_15 == string_tmp_17) : (False(isolate)))) };
-  Local<Value> result_19 = Boolean_13->Call(Null(isolate), 1, argv_18);
-  if (result_19->ToBoolean()->Value()) {
-    args.GetReturnValue().Set(b);
+  Local<Context> ctx_14 = isolate->GetCurrentContext();
+  Local<Object> global_15 = ctx_14->Global();
+  Local<Function> Boolean_16 = Local<Function>::Cast(global_15->Get(String::NewFromUtf8(isolate, "Boolean")));
+  String::Utf8Value utf8value_tmp_17(n_1);
+  std::string string_tmp_18(*utf8value_tmp_17);
+  String::Utf8Value utf8value_tmp_19(Number::New(isolate, 1));
+  std::string string_tmp_20(*utf8value_tmp_19);
+  Local<Value> argv_21[] = { (n_1->IsBoolean() || Number::New(isolate, 1)->IsBoolean()) ? Boolean::New(isolate, n_1->ToBoolean(isolate)->Value() == Number::New(isolate, 1)->ToBoolean(isolate)->Value()) : ((n_1->IsNumber() || Number::New(isolate, 1)->IsNumber()) ? Boolean::New(isolate, n_1->ToNumber(isolate)->Value() == Number::New(isolate, 1)->ToNumber(isolate)->Value()) : ((n_1->IsString() || Number::New(isolate, 1)->IsString()) ? Boolean::New(isolate, string_tmp_18 == string_tmp_20) : (False(isolate)))) };
+  Local<Value> result_22 = Boolean_16->Call(Null(isolate), 1, argv_21);
+  if (result_22->ToBoolean()->Value()) {
+    args.GetReturnValue().Set(b_3);
     return;
     return;
   }
-  Local<Value> arg_20 = (n->IsNumber() || Number::New(isolate, 1)->IsNumber()) ? (Number::New(isolate, n->ToNumber(isolate)->Value() - Number::New(isolate, 1)->ToNumber(isolate)->Value())) : Local<Number>::Cast(Null(isolate));
-  Local<Value> arg_21 = b;
-  Local<Value> arg_22 = (a->IsString() || b->IsString()) ? Local<Value>::Cast(String::Concat(a->ToString(), b->ToString())) : Local<Value>::Cast((a->IsNumber() || b->IsNumber()) ? (Number::New(isolate, a->ToNumber(isolate)->Value() + b->ToNumber(isolate)->Value())) : Local<Number>::Cast(Null(isolate)));
-  Local<FunctionTemplate> ftpl_24 = FunctionTemplate::New(isolate, fib);
-  Local<Function> fn_23 = ftpl_24->GetFunction();
-  fn_23->SetName(String::NewFromUtf8(isolate, "fib"));
-  n = arg_20;
-  a = arg_21;
-  b = arg_22;
-  goto tail_recurse_1;
+  Local<Value> arg_23 = (n_1->IsNumber() || Number::New(isolate, 1)->IsNumber()) ? (Number::New(isolate, n_1->ToNumber(isolate)->Value() - Number::New(isolate, 1)->ToNumber(isolate)->Value())) : Local<Number>::Cast(Null(isolate));
+  Local<Value> arg_24 = b_3;
+  Local<Value> arg_25 = (a_2->IsString() || b_3->IsString()) ? Local<Value>::Cast(String::Concat(a_2->ToString(), b_3->ToString())) : Local<Value>::Cast((a_2->IsNumber() || b_3->IsNumber()) ? (Number::New(isolate, a_2->ToNumber(isolate)->Value() + b_3->ToNumber(isolate)->Value())) : Local<Number>::Cast(Null(isolate)));
+  Local<FunctionTemplate> ftpl_27 = FunctionTemplate::New(isolate, fib_0);
+  Local<Function> fn_26 = ftpl_27->GetFunction();
+  fn_26->SetName(String::NewFromUtf8(isolate, "fib_0"));
+  n_1 = arg_23;
+  a_2 = arg_24;
+  b_3 = arg_25;
+  goto tail_recurse_4;
 }
 
 void jsc_main(const FunctionCallbackInfo<Value>& args) {
   Isolate* isolate = args.GetIsolate();
-tail_recurse_25:
-  Local<Value> arg_26 = Number::New(isolate, 50);
-  Local<Value> arg_27 = Number::New(isolate, 0);
-  Local<Value> arg_28 = Number::New(isolate, 1);
-  Local<FunctionTemplate> ftpl_30 = FunctionTemplate::New(isolate, fib);
-  Local<Function> fn_29 = ftpl_30->GetFunction();
-  fn_29->SetName(String::NewFromUtf8(isolate, "fib"));
-  Local<Value> argv_31[] = { arg_26, arg_27, arg_28 };
-  Local<Value> result_32 = fn_29->Call(Null(isolate), 3, argv_31);
-  Local<Value> arg_33 = result_32;
-  Local<Function> fn_34 = Local<Function>::Cast(Local<Object>::Cast(isolate->GetCurrentContext()->Global()->Get(String::NewFromUtf8(isolate, "console")))->Get(String::NewFromUtf8(isolate, "log")));
-  Local<Value> argv_35[] = { arg_33 };
-  Local<Value> result_36 = fn_34->Call(Null(isolate), 1, argv_35);
-  result_36;
+tail_recurse_28:
+  Local<Value> dot_parent_30 = isolate->GetCurrentContext()->Global()->Get(String::NewFromUtf8(isolate, "console"));
+  Local<String> property_31 = String::NewFromUtf8(isolate, "log");
+  while (dot_parent_30->IsObject() && !dot_parent_30.As<Object>()->HasOwnProperty(isolate->GetCurrentContext(), property_31).ToChecked()) {
+    dot_parent_30 = dot_parent_30.As<Object>()->GetPrototype();
+  }
+  Local<Value> dot_result_29 = dot_parent_30.As<Object>()->Get(isolate->GetCurrentContext(), property_31).ToLocalChecked();
+  Local<Value> arg_32 = Number::New(isolate, 50);
+  Local<Value> arg_33 = Number::New(isolate, 0);
+  Local<Value> arg_34 = Number::New(isolate, 1);
+  Local<FunctionTemplate> ftpl_36 = FunctionTemplate::New(isolate, fib_0);
+  Local<Function> fn_35 = ftpl_36->GetFunction();
+  fn_35->SetName(String::NewFromUtf8(isolate, "fib_0"));
+  Local<Value> argv_37[] = { arg_32, arg_33, arg_34 };
+  Local<Value> result_38 = fn_35->Call(Null(isolate), 3, argv_37);
+  Local<Value> arg_39 = result_38;
+  Local<Function> fn_40 = Local<Function>::Cast(dot_result_29);
+  Local<Value> argv_41[] = { arg_39 };
+  Local<Value> result_42 = fn_40->Call(dot_parent_30, 1, argv_41);
+  result_42;
 }
 
 void Init(Local<Object> exports) {
