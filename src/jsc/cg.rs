@@ -48,7 +48,7 @@ impl CG {
         depth: usize,
         debug_s: S
     ) where S: Into<String> {
-        self.writeln(depth, format!("std::cout << \"[DEBUG] {}\" << std::endl;", debug_s.into()));
+        self.writeln(depth, format!("std::cout << \"[DEBUG] \" << {} << std::endl;", debug_s.into()));
     }
 
     fn generate_function_declaration(
@@ -401,6 +401,10 @@ impl CG {
                     Some (name) => name.clone(),
                     None => panic!("Cannot assign to undeclared variable, {}", id.name.as_ref()),
                 },
+            &easter::patt::AssignTarget::Brack (_, ref object, ref accessor) => {
+                return self.generate_object_modify(depth, object, accessor, body, scope);
+            },
+            // TODO: support dot assignment
             _ =>
                 panic!("Unsupported assign target: {:#?}", assop.tag)
         };
@@ -433,6 +437,32 @@ impl CG {
         }
 
         tmp
+    }
+
+    fn generate_object_lookup(
+        &mut self,
+        depth: usize,
+        object: &easter::expr::Expr,
+        accessor: &easter::expr::Expr,
+        scope: &mut Scope,
+    ) -> String {
+        let (object_tmp, _) = self.generate_expression(depth, object, scope, &None);
+        let (accessor_tmp, _) = self.generate_expression(depth, accessor, scope, &None);
+        format!("{}.As<Object>()->Get({})", object_tmp, accessor_tmp)
+    }
+
+    fn generate_object_modify(
+        &mut self,
+        depth: usize,
+        object: &easter::expr::Expr,
+        accessor: &easter::expr::Expr,
+        value: &easter::expr::Expr,
+        scope: &mut Scope,
+    ) -> String {
+        let (object_tmp, _) = self.generate_expression(depth, object, scope, &None);
+        let (accessor_tmp, _) = self.generate_expression(depth, accessor, scope, &None);
+        let (value_tmp, _) = self.generate_expression(depth, value, scope, &None);
+        format!("{}.As<Object>()->Set({}, {})", object_tmp, accessor_tmp, value_tmp)
     }
 
     fn generate_expression(
@@ -478,6 +508,8 @@ impl CG {
             &easter::expr::Expr::False(_) => ("False(isolate)".to_string(), String::from(NULL_STRING)),
             &easter::expr::Expr::Arr(_, ref elements) =>
                 (self.generate_array(depth, elements, scope), String::from(NULL_STRING)),
+            &easter::expr::Expr::Brack(_, ref object, ref accessor) =>
+                (self.generate_object_lookup(depth, object, accessor, scope), String::from(NULL_STRING)),
             _ =>
                 panic!("Got expression: {:#?}", expression),
         }
