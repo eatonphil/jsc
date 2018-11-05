@@ -397,7 +397,10 @@ impl CG {
 
         let target: String = match patt {
             &easter::patt::AssignTarget::Id (ref id) =>
-                id.name.as_ref().to_string(),
+                match scope.get(id.name.as_ref()) {
+                    Some (name) => name.clone(),
+                    None => panic!("Cannot assign to undeclared variable, {}", id.name.as_ref()),
+                },
             _ =>
                 panic!("Unsupported assign target: {:#?}", assop.tag)
         };
