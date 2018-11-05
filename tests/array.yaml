@@ -1,0 +1,27 @@
+cases:
+  - name: literal array lookup
+    test: 1
+
+    status: 0
+    stdout: "111\n"
+
+  - name: calculated array lookup
+    test: "(1 + 1)"
+
+    status: 0
+    stdout: "19\n"
+
+  - name: modify array
+    test: 3
+    side_effects: "a[a.length] = 42;"
+
+    status: 0
+    stdout: "42\n"
+
+templates:
+- test.js: |
+    function main() {
+      var a = [5, 111, 19];
+      {{ side_effects }}
+      console.log(a[{{ test }}]);
+    }
