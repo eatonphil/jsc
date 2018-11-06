@@ -45,11 +45,15 @@ struct TCO {
 }
 
 macro_rules! v8_null {
-    () => { String::from("Null(isolate)") }
+    () => (String::from("Null(isolate)"))
 }
 
 macro_rules! v8_string {
-    ($e: expr) => { format!("String::NewFromUtf8(isolate, \"{}\")", $e) }
+    ($e: expr) => (format!("String::NewFromUtf8(isolate, \"{}\")", $e))
+}
+
+macro_rules! v8_number {
+    ($e: expr) => (format!("Number::New(isolate, {})", $e))
 }
 
 macro_rules! emit {
@@ -312,7 +316,7 @@ impl CG {
         right: String
     ) -> String {
         let number_check = format!("{}->IsNumber() || {}->IsNumber()", left, right);
-        let number_case = format!("Number::New(isolate, {}->ToNumber(isolate)->Value() {} {}->ToNumber(isolate)->Value())", left, op, right);
+        let number_case = v8_number!(format!("{}->ToNumber(isolate)->Value() {} {}->ToNumber(isolate)->Value()", left, op, right));
 
         // TODO: find NaN value
         format!("({}) ? ({}) : Local<Number>::Cast(Null(isolate))",
@@ -513,7 +517,7 @@ impl CG {
                             .replace("\r", "\\r")),
                  v8_null!()),
             &easter::expr::Expr::Number(_, ref number) =>
-                (format!("Number::New(isolate, {})", number.value), v8_null!()),
+                (v8_number!(number.value), v8_null!()),
             &easter::expr::Expr::Binop(_, ref op, ref exp1, ref exp2) =>
                 (self.generate_binop(depth, op, exp1, exp2, scope), v8_null!()),
             &easter::expr::Expr::Dot(_, ref object, ref accessor) =>
