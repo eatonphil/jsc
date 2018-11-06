@@ -31,7 +31,8 @@ macro_rules! v8_string {
 
 macro_rules! emit {
     ($self: expr, $depth: expr, $format: expr, $( $arg: expr ),* ) => ($self.writeln($depth, format!($format, $( $arg, )*)));
-    ($self: expr, $depth: expr, $string: expr ) => ($self.writeln($depth, $string))
+    ($self: expr, $depth: expr, $string: expr ) => ($self.writeln($depth, $string));
+    ($self: expr, $string: expr ) => ($self.writeln(0, $string))
 }
 
 impl CG {
@@ -713,44 +714,44 @@ impl CG {
 
     fn generate_prefix(&mut self) {
         if self.use_node {
-            emit!(self, 0, "#include <string>");
-            emit!(self, 0, "#include <iostream>");
+            emit!(self, "#include <string>");
+            emit!(self, "#include <iostream>");
 
-            emit!(self, 0, "\n#include <node.h>\n");
+            emit!(self, "\n#include <node.h>\n");
         } else {
-            emit!(self, 0, "#include <stdio>");
-            emit!(self, 0, "#include <stdlib>");
+            emit!(self, "#include <stdio>");
+            emit!(self, "#include <stdlib>");
 
-            emit!(self, 0, "#include <libplatform.h>");
-            emit!(self, 0, "#include <v8.h>\n");
+            emit!(self, "#include <libplatform.h>");
+            emit!(self, "#include <v8.h>\n");
         }
 
-        emit!(self, 0, "using v8::Array;");
-        emit!(self, 0, "using v8::Boolean;");
-        emit!(self, 0, "using v8::Context;");
-        emit!(self, 0, "using v8::Exception;");
-        emit!(self, 0, "using v8::Function;");
-        emit!(self, 0, "using v8::FunctionTemplate;");
-        emit!(self, 0, "using v8::FunctionCallbackInfo;");
-        emit!(self, 0, "using v8::Isolate;");
-        emit!(self, 0, "using v8::Local;");
-        emit!(self, 0, "using v8::Null;");
-        emit!(self, 0, "using v8::Number;");
-        emit!(self, 0, "using v8::Object;");
-        emit!(self, 0, "using v8::String;");
-        emit!(self, 0, "using v8::False;");
-        emit!(self, 0, "using v8::True;");
-        emit!(self, 0, "using v8::Value;\n");
+        emit!(self, "using v8::Array;");
+        emit!(self, "using v8::Boolean;");
+        emit!(self, "using v8::Context;");
+        emit!(self, "using v8::Exception;");
+        emit!(self, "using v8::Function;");
+        emit!(self, "using v8::FunctionTemplate;");
+        emit!(self, "using v8::FunctionCallbackInfo;");
+        emit!(self, "using v8::Isolate;");
+        emit!(self, "using v8::Local;");
+        emit!(self, "using v8::Null;");
+        emit!(self, "using v8::Number;");
+        emit!(self, "using v8::Object;");
+        emit!(self, "using v8::String;");
+        emit!(self, "using v8::False;");
+        emit!(self, "using v8::True;");
+        emit!(self, "using v8::Value;\n");
     }
 
     fn generate_postfix(&mut self) {
         if self.use_node {
-            emit!(self, 0, "void Init(Local<Object> exports) {");
+            emit!(self, "void Init(Local<Object> exports) {");
             emit!(self, 1, "NODE_SET_METHOD(exports, \"jsc_main\", jsc_main);");
-            emit!(self, 0, "}\n");
-            emit!(self, 0, "NODE_MODULE(NODE_GYP_MODULE_NAME, Init)");
+            emit!(self, "}\n");
+            emit!(self, "NODE_MODULE(NODE_GYP_MODULE_NAME, Init)");
         } else {
-            emit!(self, 0, "
+            emit!(self, "
 int main(int argc, char* argv[]) {
   int exit_code;
   
