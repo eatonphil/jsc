@@ -222,7 +222,7 @@ impl CG {
         if typ == "String" {
             let utf8value_tmp = self.register_local(scope, "utf8value_tmp");
             let string_tmp = self.register_local(scope, "string_tmp");
-            emit!(self, depth, "String::Utf8Value {}({})", utf8value_tmp, value.clone());
+            emit!(self, depth, "String::Utf8Value {}({});", utf8value_tmp, value.clone());
             emit!(self, depth, "std::string {}(*{});", string_tmp, utf8value_tmp);
             string_tmp
         } else {
