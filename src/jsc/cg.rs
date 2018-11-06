@@ -5,14 +5,37 @@ use std::collections::HashMap;
 
 extern crate easter;
 
-type Scope = HashMap<String, String>;
+#[derive(Clone)]
+struct Scope {
+    map: HashMap<String, String>,
+    counter: Box<usize>
+}
+
+impl Scope {
+    pub fn register<S>(
+        &mut self,
+        local_s: S
+    ) -> String where S: Into<String> {
+        let local = local_s.into();
+        let safe_local = format!("{}_{}", local, *self.counter);
+        *self.counter += 1;
+        self.map.insert(local, safe_local.clone());
+        safe_local
+    }
+
+    pub fn new() -> Scope {
+        Scope {
+            map: HashMap::new(),
+            counter: Box::new(0)
+        }
+    }
+}
 
 pub struct CG {
     ast: easter::prog::Script,
     output_file: File,
     use_node: bool,
     generated_funcs: Vec<String>,
-    unique_scope_counter: Box<usize>,
 }
 
 struct TCO {
@@ -22,11 +45,15 @@ struct TCO {
 }
 
 macro_rules! v8_null {
-    () => { String::from("Null(isolate)") }
+    () => (String::from("Null(isolate)"))
 }
 
 macro_rules! v8_string {
-    ($e: expr) => { format!("String::NewFromUtf8(isolate, \"{}\")", $e) }
+    ($e: expr) => (format!("String::NewFromUtf8(isolate, \"{}\")", $e))
+}
+
+macro_rules! v8_number {
+    ($e: expr) => (format!("Number::New(isolate, {})", $e))
 }
 
 macro_rules! emit {
@@ -41,18 +68,6 @@ impl CG {
         let indents = iter::repeat(" ").take(depth * spaces).collect::<String>();
         let line = format!("{}{}\n", indents, output.into());
         self.output_file.write_all(line.as_bytes()).expect("failed to write")
-    }
-
-    fn register_local<S>(
-        &mut self,
-        scope: &mut Scope,
-        local_s: S
-    ) -> String where S: Into<String> {
-        let local = local_s.into();
-        let safe_local = format!("{}_{}", local, *self.unique_scope_counter);
-        *self.unique_scope_counter += 1;
-        scope.insert(local, safe_local.clone());
-        safe_local
     }
 
     fn generate_debug<S>(
@@ -77,7 +92,7 @@ impl CG {
             if local == "main" {
                 "jsc_main".to_string()
             } else {
-                let safe = self.register_local(scope, local);
+                let safe = scope.register(local);
                 self.generated_funcs.push(safe.clone());
                 safe
             }
@@ -92,7 +107,7 @@ impl CG {
         for (i, param) in params.list.iter().enumerate() {
             match param {
                 &easter::patt::Patt::Simple (ref id) => {
-                    let safe_local = self.register_local(scope, id.name.as_ref());
+                    let safe_local = scope.register(id.name.as_ref());
                     param_strings.push(safe_local.clone());
                     emit!(self, depth + 1, "Local<Value> {} = args[{}];", safe_local, i);
                 },
@@ -101,7 +116,7 @@ impl CG {
             }
         }
 
-        let tail_recurse_label = self.register_local(scope, "tail_recurse");
+        let tail_recurse_label = scope.register("tail_recurse");
         emit!(self, 0, "{}:", tail_recurse_label);
 
         let new_scope = &mut scope.clone();
@@ -121,7 +136,7 @@ impl CG {
         fn_name: String,
         scope: &mut Scope,
     ) {
-        let ftpl_tmp = self.register_local(scope, "ftpl");
+        let ftpl_tmp = scope.register("ftpl");
         emit!(self, depth, "Local<FunctionTemplate> {} = FunctionTemplate::New(isolate, {});",
                                     ftpl_tmp,
                                     fn_name);
@@ -158,10 +173,10 @@ impl CG {
         };
 
         if non_tco {
-            let argv_tmp = self.register_local(scope, "argv");
+            let argv_tmp = scope.register("argv");
             emit!(self, depth, "Local<Value> {}[] = {{ {} }};", argv_tmp, args.join(", "));
 
-            let result_tmp = self.register_local(scope, "result");
+            let result_tmp = scope.register("result");
             emit!(self,
                   depth,
                   "Local<Value> {} = {}->Call({}, {}, {});",
@@ -190,7 +205,7 @@ impl CG {
         let mut argv_items = Vec::with_capacity(args_len);
         for arg in args.iter() {
             let (arg_holder, _) = self.generate_expression(depth, arg, scope, &None);
-            let tmp = self.register_local(scope, "arg");
+            let tmp = scope.register("arg");
 
             if self.generated_funcs.contains(&arg_holder) {
                 self.generate_function_value(depth, tmp.clone(), arg_holder, scope);
@@ -201,7 +216,7 @@ impl CG {
             argv_items.push(tmp);
         }
 
-        let fn_tmp = self.register_local(scope, "fn");
+        let fn_tmp = scope.register("fn");
 
         if self.generated_funcs.contains(&fn_name) {
             self.generate_function_value(depth, fn_tmp.clone(), fn_name.clone(), scope);
@@ -220,8 +235,8 @@ impl CG {
         scope: &mut Scope
     ) -> String {
         if typ == "String" {
-            let utf8value_tmp = self.register_local(scope, "utf8value_tmp");
-            let string_tmp = self.register_local(scope, "string_tmp");
+            let utf8value_tmp = scope.register("utf8value_tmp");
+            let string_tmp = scope.register("string_tmp");
             emit!(self, depth, "String::Utf8Value {}({});", utf8value_tmp, value.clone());
             emit!(self, depth, "std::string {}(*{});", string_tmp, utf8value_tmp);
             string_tmp
@@ -301,7 +316,7 @@ impl CG {
         right: String
     ) -> String {
         let number_check = format!("{}->IsNumber() || {}->IsNumber()", left, right);
-        let number_case = format!("Number::New(isolate, {}->ToNumber(isolate)->Value() {} {}->ToNumber(isolate)->Value())", left, op, right);
+        let number_case = v8_number!(format!("{}->ToNumber(isolate)->Value() {} {}->ToNumber(isolate)->Value()", left, op, right));
 
         // TODO: find NaN value
         format!("({}) ? ({}) : Local<Number>::Cast(Null(isolate))",
@@ -369,9 +384,9 @@ impl CG {
         scope: &mut Scope
     ) -> (String, String) {
         let (exp, _) = self.generate_expression(depth, object, scope, &None);
-        let result_tmp = self.register_local(scope, "dot_result");
-        let parent_tmp = self.register_local(scope, "dot_parent");
-        let property_tmp = self.register_local(scope, "property");
+        let result_tmp = scope.register("dot_result");
+        let parent_tmp = scope.register("dot_parent");
+        let property_tmp = scope.register("property");
         emit!(self, depth, "Local<Value> {} = {};", parent_tmp, exp);
         emit!(self, depth, "Local<String> {} = {};", property_tmp, v8_string!(accessor.value));
         emit!(self, depth, "while ({}->IsObject() && !{}.As<Object>()->HasOwnProperty(isolate->GetCurrentContext(), {}).ToChecked()) {{",
@@ -407,7 +422,7 @@ impl CG {
 
         let target: String = match patt {
             &easter::patt::AssignTarget::Id (ref id) =>
-                match scope.get(id.name.as_ref()) {
+                match scope.map.get(id.name.as_ref()) {
                     Some (name) => name.clone(),
                     None => panic!("Cannot assign to undeclared variable, {}", id.name.as_ref()),
                 },
@@ -430,7 +445,7 @@ impl CG {
         elements: &Vec<Option<easter::expr::Expr>>,
         scope: &mut Scope
     ) -> String {
-        let tmp = self.register_local(scope, "array");
+        let tmp = scope.register("array");
 
         emit!(self, depth, "Local<Array> {} = Array::New(isolate, {});", tmp, elements.len());
 
@@ -487,7 +502,7 @@ impl CG {
                 (self.generate_call(depth, name, args, scope, tco), v8_null!()),
             &easter::expr::Expr::Id(ref id) => {
                 let local = id.name.as_ref();
-                (match scope.get(local) {
+                (match scope.map.get(local) {
                     Some (safe_local) => safe_local.clone(),
                     None => match local {
                         "global" => "isolate->GetCurrentContext()->Global()".to_string(),
@@ -502,7 +517,7 @@ impl CG {
                             .replace("\r", "\\r")),
                  v8_null!()),
             &easter::expr::Expr::Number(_, ref number) =>
-                (format!("Number::New(isolate, {})", number.value), v8_null!()),
+                (v8_number!(number.value), v8_null!()),
             &easter::expr::Expr::Binop(_, ref op, ref exp1, ref exp2) =>
                 (self.generate_binop(depth, op, exp1, exp2, scope), v8_null!()),
             &easter::expr::Expr::Dot(_, ref object, ref accessor) =>
@@ -539,7 +554,7 @@ impl CG {
             },
             _ => "".to_string(),
         };
-        let safe_name = self.register_local(scope, id.name.as_ref());
+        let safe_name = scope.register(id.name.as_ref());
         emit!(self, depth, "Local<Value> {}{};", safe_name, suffix);
     }
 
@@ -585,9 +600,9 @@ impl CG {
         test: &easter::expr::Expr,
         scope: &mut Scope
     ) -> String {
-        let ctx_tmp = self.register_local(scope, "ctx");
-        let global_tmp = self.register_local(scope, "global");
-        let boolean_tmp = self.register_local(scope, "Boolean");
+        let ctx_tmp = scope.register("ctx");
+        let global_tmp = scope.register("global");
+        let boolean_tmp = scope.register("Boolean");
 
         emit!(self,
               depth,
@@ -807,7 +822,7 @@ int main(int argc, char* argv[]) {
             body.push(self.ast.body.remove(0));
         }
 
-        self.generate_statements(0, &body, &mut HashMap::new(), &None);
+        self.generate_statements(0, &body, &mut Scope::new(), &None);
         self.generate_postfix();
     }
 
@@ -824,8 +839,7 @@ int main(int argc, char* argv[]) {
             use_node,
             ast,
             output_file: File::create(path).expect(error.as_str()),
-            generated_funcs: Vec::new(),
-            unique_scope_counter: Box::new(0),
+            generated_funcs: Vec::new()
         }
     }
 }
