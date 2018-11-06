@@ -21,7 +21,19 @@ struct TCO {
     label: String,
 }
 
-const NULL_STRING: &str = "Null(isolate)";
+macro_rules! v8_null {
+    () => { String::from("Null(isolate)") }
+}
+
+macro_rules! v8_string {
+    ($e: expr) => { format!("String::NewFromUtf8(isolate, \"{}\")", $e) }
+}
+
+macro_rules! emit {
+    ($self: expr, $depth: expr, $format: expr, $( $arg: expr ),* ) => ($self.writeln($depth, format!($format, $( $arg, )*)));
+    ($self: expr, $depth: expr, $string: expr ) => ($self.writeln($depth, $string));
+    ($self: expr, $string: expr ) => ($self.writeln(0, $string))
+}
 
 impl CG {
     fn writeln<S>(&mut self, depth: usize, output: S) where S: Into<String> {
@@ -48,7 +60,7 @@ impl CG {
         depth: usize,
         debug_s: S
     ) where S: Into<String> {
-        self.writeln(depth, format!("std::cout << \"[DEBUG] \" << {} << std::endl;", debug_s.into()));
+        emit!(self, depth, "std::cout << \"[DEBUG] \" << {} << std::endl;", debug_s.into());
     }
 
     fn generate_function_declaration(
@@ -73,8 +85,8 @@ impl CG {
             "lambda".to_string()
         };
 
-        self.writeln(depth, format!("void {}(const FunctionCallbackInfo<Value>& args) {{", name));
-        self.writeln(depth + 1, "Isolate* isolate = args.GetIsolate();");
+        emit!(self, depth, "void {}(const FunctionCallbackInfo<Value>& args) {{", name);
+        emit!(self, depth + 1, "Isolate* isolate = args.GetIsolate();");
 
         let mut param_strings = Vec::new();
         for (i, param) in params.list.iter().enumerate() {
@@ -82,11 +94,7 @@ impl CG {
                 &easter::patt::Patt::Simple (ref id) => {
                     let safe_local = self.register_local(scope, id.name.as_ref());
                     param_strings.push(safe_local.clone());
-                    self.writeln(
-                        depth + 1,
-                        format!("Local<Value> {} = args[{}];",
-                                safe_local,
-                                i));
+                    emit!(self, depth + 1, "Local<Value> {} = args[{}];", safe_local, i);
                 },
                 _ =>
                     panic!("Received complex param (involving destructuring)"),
@@ -94,7 +102,7 @@ impl CG {
         }
 
         let tail_recurse_label = self.register_local(scope, "tail_recurse");
-        self.writeln(0, format!("{}:", tail_recurse_label));
+        emit!(self, 0, "{}:", tail_recurse_label);
 
         let new_scope = &mut scope.clone();
         self.generate_statements(depth + 1, body, new_scope, &Some (TCO {
@@ -103,7 +111,7 @@ impl CG {
             params: param_strings
         }));
 
-        self.writeln(depth, "}\n");
+        emit!(self, depth, "}\n");
     }
 
     fn generate_function_value(
@@ -114,11 +122,11 @@ impl CG {
         scope: &mut Scope,
     ) {
         let ftpl_tmp = self.register_local(scope, "ftpl");
-        self.writeln(depth, format!("Local<FunctionTemplate> {} = FunctionTemplate::New(isolate, {});",
+        emit!(self, depth, "Local<FunctionTemplate> {} = FunctionTemplate::New(isolate, {});",
                                     ftpl_tmp,
-                                    fn_name));
-        self.writeln(depth, format!("Local<Function> {} = {}->GetFunction();", fn_tmp, ftpl_tmp));
-        self.writeln(depth, format!("{}->SetName(String::NewFromUtf8(isolate, \"{}\"));", fn_tmp, fn_name));
+                                    fn_name);
+        emit!(self, depth, "Local<Function> {} = {}->GetFunction();", fn_tmp, ftpl_tmp);
+        emit!(self, depth, "{}->SetName({});", fn_tmp, v8_string!(fn_name));
     }
 
     // TODO: this cannot generate dependencies or all expressions must be treated as such
@@ -136,10 +144,10 @@ impl CG {
             &Some (TCO { ref label, ref params, ref name }) => {
                 if *name == fn_name {
                     for (i, arg) in args.iter().enumerate() {
-                        self.writeln(depth, format!("{} = {};", params[i], arg));
+                        emit!(self, depth, "{} = {};", params[i], arg);
                     }
 
-                    self.writeln(depth, format!("goto {};", label));
+                    emit!(self, depth, "goto {};", label);
 
                     false
                 } else {
@@ -151,15 +159,17 @@ impl CG {
 
         if non_tco {
             let argv_tmp = self.register_local(scope, "argv");
-            self.writeln(depth, format!("Local<Value> {}[] = {{ {} }};", argv_tmp, args.join(", ")));
+            emit!(self, depth, "Local<Value> {}[] = {{ {} }};", argv_tmp, args.join(", "));
 
             let result_tmp = self.register_local(scope, "result");
-            self.writeln(depth, format!("Local<Value> {} = {}->Call({}, {}, {});",
-                                        result_tmp,
-                                        fn_tmp,
-                                        parent,
-                                        args.len(),
-                                        argv_tmp));
+            emit!(self,
+                  depth,
+                  "Local<Value> {} = {}->Call({}, {}, {});",
+                  result_tmp,
+                  fn_tmp,
+                  parent,
+                  args.len(),
+                  argv_tmp);
             result_tmp
         } else {
             "".to_string()
@@ -185,7 +195,7 @@ impl CG {
             if self.generated_funcs.contains(&arg_holder) {
                 self.generate_function_value(depth, tmp.clone(), arg_holder, scope);
             } else {
-                self.writeln(depth, format!("Local<Value> {} = {};", tmp, arg_holder));
+                emit!(self, depth, "Local<Value> {} = {};", tmp, arg_holder);
             }
 
             argv_items.push(tmp);
@@ -196,7 +206,7 @@ impl CG {
         if self.generated_funcs.contains(&fn_name) {
             self.generate_function_value(depth, fn_tmp.clone(), fn_name.clone(), scope);
         } else {
-            self.writeln(depth, format!("Local<Function> {} = Local<Function>::Cast({});", fn_tmp, fn_name));
+            emit!(self, depth, "Local<Function> {} = Local<Function>::Cast({});", fn_tmp, fn_name);
         };
 
         self.generate_call_internal(depth, parent, fn_tmp, fn_name.to_string(), argv_items, scope, tco)
@@ -212,8 +222,8 @@ impl CG {
         if typ == "String" {
             let utf8value_tmp = self.register_local(scope, "utf8value_tmp");
             let string_tmp = self.register_local(scope, "string_tmp");
-            self.writeln(depth, format!("String::Utf8Value {}({});", utf8value_tmp, value.clone()));
-            self.writeln(depth, format!("std::string {}(*{});", string_tmp, utf8value_tmp));
+            emit!(self, depth, "String::Utf8Value {}({});", utf8value_tmp, value.clone());
+            emit!(self, depth, "std::string {}(*{});", string_tmp, utf8value_tmp);
             string_tmp
         } else {
             format!("{}->To{}(isolate)->Value()", value, typ)
@@ -362,13 +372,13 @@ impl CG {
         let result_tmp = self.register_local(scope, "dot_result");
         let parent_tmp = self.register_local(scope, "dot_parent");
         let property_tmp = self.register_local(scope, "property");
-        self.writeln(depth, format!("Local<Value> {} = {};", parent_tmp, exp));
-        self.writeln(depth, format!("Local<String> {} = String::NewFromUtf8(isolate, \"{}\");", property_tmp, accessor.value));
-        self.writeln(depth, format!("while ({}->IsObject() && !{}.As<Object>()->HasOwnProperty(isolate->GetCurrentContext(), {}).ToChecked()) {{",
-                                    parent_tmp, parent_tmp, property_tmp));
-        self.writeln(depth + 1, format!("{} = {}.As<Object>()->GetPrototype();", parent_tmp, parent_tmp));
-        self.writeln(depth, "}");
-        self.writeln(depth, format!("Local<Value> {} = {}.As<Object>()->Get(isolate->GetCurrentContext(), {}).ToLocalChecked();", result_tmp, parent_tmp, property_tmp));
+        emit!(self, depth, "Local<Value> {} = {};", parent_tmp, exp);
+        emit!(self, depth, "Local<String> {} = {};", property_tmp, v8_string!(accessor.value));
+        emit!(self, depth, "while ({}->IsObject() && !{}.As<Object>()->HasOwnProperty(isolate->GetCurrentContext(), {}).ToChecked()) {{",
+                                    parent_tmp, parent_tmp, property_tmp);
+        emit!(self, depth + 1, "{} = {}.As<Object>()->GetPrototype();", parent_tmp, parent_tmp);
+        emit!(self, depth, "}");
+        emit!(self, depth, "Local<Value> {} = {}.As<Object>()->Get(isolate->GetCurrentContext(), {}).ToLocalChecked();", result_tmp, parent_tmp, property_tmp);
         (result_tmp, parent_tmp)
     }
 
@@ -422,7 +432,7 @@ impl CG {
     ) -> String {
         let tmp = self.register_local(scope, "array");
 
-        self.writeln(depth, format!("Local<Array> {} = Array::New(isolate, {});", tmp, elements.len()));
+        emit!(self, depth, "Local<Array> {} = Array::New(isolate, {});", tmp, elements.len());
 
         for (i, maybe_arg) in elements.iter().enumerate() {
             let element = match maybe_arg {
@@ -430,10 +440,10 @@ impl CG {
                     let (value, _) = self.generate_expression(depth, arg, scope, &None);
                     value
                 },
-                None => String::from(NULL_STRING),
+                None => v8_null!(),
             };
 
-            self.writeln(depth, format!("{}->Set({}, {});", tmp, i, element));
+            emit!(self, depth, "{}->Set({}, {});", tmp, i, element);
         }
 
         tmp
@@ -474,27 +484,27 @@ impl CG {
     ) -> (String, String) {
         match expression {
             &easter::expr::Expr::Call(_, ref name, ref args) =>
-                (self.generate_call(depth, name, args, scope, tco), String::from(NULL_STRING)),
+                (self.generate_call(depth, name, args, scope, tco), v8_null!()),
             &easter::expr::Expr::Id(ref id) => {
                 let local = id.name.as_ref();
                 (match scope.get(local) {
                     Some (safe_local) => safe_local.clone(),
                     None => match local {
                         "global" => "isolate->GetCurrentContext()->Global()".to_string(),
-                        other => format!("isolate->GetCurrentContext()->Global()->Get(String::NewFromUtf8(isolate, \"{}\"))", other),
+                        other => format!("isolate->GetCurrentContext()->Global()->Get({})", v8_string!(other)),
                     }
-                }, String::from(NULL_STRING))
+                }, v8_null!())
             },
             &easter::expr::Expr::String(_, ref string) =>
-                (format!("String::NewFromUtf8(isolate, \"{}\")",
-                        string.value
-                        .replace("\n", "\\n")
-                        .replace("\t", "\\t")
-                        .replace("\r", "\\r")), String::from(NULL_STRING)),
+                (v8_string!(string.value
+                            .replace("\n", "\\n")
+                            .replace("\t", "\\t")
+                            .replace("\r", "\\r")),
+                 v8_null!()),
             &easter::expr::Expr::Number(_, ref number) =>
-                (format!("Number::New(isolate, {})", number.value), String::from(NULL_STRING)),
+                (format!("Number::New(isolate, {})", number.value), v8_null!()),
             &easter::expr::Expr::Binop(_, ref op, ref exp1, ref exp2) =>
-                (self.generate_binop(depth, op, exp1, exp2, scope), String::from(NULL_STRING)),
+                (self.generate_binop(depth, op, exp1, exp2, scope), v8_null!()),
             &easter::expr::Expr::Dot(_, ref object, ref accessor) =>
                 self.generate_dot(depth, object, accessor, scope),
             &easter::expr::Expr::Assign(_, ref assop, ref target_patt, ref body) =>
@@ -503,13 +513,13 @@ impl CG {
                         self.generate_assign(depth, assop, &target, body, scope),
                     _ =>
                         panic!("Got complex assignment (destructuring): {:#?}", expression)
-                }, String::from(NULL_STRING)),
-            &easter::expr::Expr::True(_) => ("True(isolate)".to_string(), String::from(NULL_STRING)),
-            &easter::expr::Expr::False(_) => ("False(isolate)".to_string(), String::from(NULL_STRING)),
+                }, v8_null!()),
+            &easter::expr::Expr::True(_) => ("True(isolate)".to_string(), v8_null!()),
+            &easter::expr::Expr::False(_) => ("False(isolate)".to_string(), v8_null!()),
             &easter::expr::Expr::Arr(_, ref elements) =>
-                (self.generate_array(depth, elements, scope), String::from(NULL_STRING)),
+                (self.generate_array(depth, elements, scope), v8_null!()),
             &easter::expr::Expr::Brack(_, ref object, ref accessor) =>
-                (self.generate_object_lookup(depth, object, accessor, scope), String::from(NULL_STRING)),
+                (self.generate_object_lookup(depth, object, accessor, scope), v8_null!()),
             _ =>
                 panic!("Got expression: {:#?}", expression),
         }
@@ -530,7 +540,7 @@ impl CG {
             _ => "".to_string(),
         };
         let safe_name = self.register_local(scope, id.name.as_ref());
-        self.writeln(depth, format!("Local<Value> {}{};", safe_name, suffix));
+        emit!(self, depth, "Local<Value> {}{};", safe_name, suffix);
     }
 
     fn generate_destructor(
@@ -564,8 +574,8 @@ impl CG {
 
         // TCO not invoked
         if result != "" {
-            self.writeln(depth, format!("args.GetReturnValue().Set({});", result));
-            self.writeln(depth, "return;");
+            emit!(self, depth, "args.GetReturnValue().Set({});", result);
+            emit!(self, depth, "return;");
         }
     }
 
@@ -579,19 +589,26 @@ impl CG {
         let global_tmp = self.register_local(scope, "global");
         let boolean_tmp = self.register_local(scope, "Boolean");
 
-        self.writeln(depth, format!("Local<Context> {} = isolate->GetCurrentContext();",
-                                    ctx_tmp));
-        self.writeln(depth, format!("Local<Object> {} = {}->Global();",
-                                    global_tmp,
-                                    ctx_tmp));
-        self.writeln(depth, format!("Local<Function> {} = Local<Function>::Cast({}->Get(String::NewFromUtf8(isolate, \"Boolean\")));",
-                                    boolean_tmp,
-                                    global_tmp));
+        emit!(self,
+              depth,
+              "Local<Context> {} = isolate->GetCurrentContext();",
+              ctx_tmp);
+        emit!(self,
+              depth,
+              "Local<Object> {} = {}->Global();",
+              global_tmp,
+              ctx_tmp);
+        emit!(self,
+              depth,
+              "Local<Function> {} = Local<Function>::Cast({}->Get({}));",
+              boolean_tmp,
+              global_tmp,
+              v8_string!("Boolean"));
 
         let (test_result, _) = self.generate_expression(depth, test, scope, &None);
         let result = self.generate_call_internal(
             depth,
-            String::from(NULL_STRING),
+            v8_null!(),
             boolean_tmp,
             "Boolean".to_string(),
             vec![test_result],
@@ -612,19 +629,19 @@ impl CG {
     ) {
         let result = self.generate_test(depth, test, scope);
 
-        self.writeln(depth, format!("if ({}->ToBoolean()->Value()) {{", result));
+        emit!(self, depth, "if ({}->ToBoolean()->Value()) {{", result);
         self.generate_statement(depth + 1, ok, scope, tco);
-        self.writeln(depth + 1, "return;");
+        emit!(self, depth + 1, "return;");
 
         match nok {
             &Some (ref stmt) => {
-                self.writeln(depth, "} else {");
+                emit!(self, depth, "} else {");
                 self.generate_statement(depth + 1, stmt, scope, tco);
             },
             _ => ()
         };
 
-        self.writeln(depth, "}");
+        emit!(self, depth, "}");
     }
 
     fn generate_while(
@@ -636,11 +653,11 @@ impl CG {
         tco: &Option<TCO>
     ) {
         let result = self.generate_test(depth, test, scope);
-        self.writeln(depth, format!("while ({}->ToBoolean()->Value()) {{", result));
+        emit!(self, depth, "while ({}->ToBoolean()->Value()) {{", result);
         self.generate_statement(depth + 1, body, scope, tco);
         let next = self.generate_test(depth + 1, test, scope);
-        self.writeln(depth + 1, format!("{} = {};", result, next));
-        self.writeln(depth, "}");
+        emit!(self, depth + 1, "{} = {};", result, next);
+        emit!(self, depth, "}");
     }
 
     fn generate_statement(
@@ -653,7 +670,7 @@ impl CG {
         match statement {
             &easter::stmt::Stmt::Expr(_, ref e, _) => {
                 let (gen, _) = self.generate_expression(depth, e, scope, tco);
-                self.writeln(depth, format!("{};", gen));
+                emit!(self, depth, "{};", gen);
             },
             &easter::stmt::Stmt::Var(_, ref destructors, _) => {
                 for destructor in destructors {
@@ -697,44 +714,44 @@ impl CG {
 
     fn generate_prefix(&mut self) {
         if self.use_node {
-            self.writeln(0, "#include <string>");
-            self.writeln(0, "#include <iostream>");
+            emit!(self, "#include <string>");
+            emit!(self, "#include <iostream>");
 
-            self.writeln(0, "\n#include <node.h>\n");
+            emit!(self, "\n#include <node.h>\n");
         } else {
-            self.writeln(0, "#include <stdio>");
-            self.writeln(0, "#include <stdlib>");
+            emit!(self, "#include <stdio>");
+            emit!(self, "#include <stdlib>");
 
-            self.writeln(0, "#include <libplatform.h>");
-            self.writeln(0, "#include <v8.h>\n");
+            emit!(self, "#include <libplatform.h>");
+            emit!(self, "#include <v8.h>\n");
         }
 
-        self.writeln(0, "using v8::Array;");
-        self.writeln(0, "using v8::Boolean;");
-        self.writeln(0, "using v8::Context;");
-        self.writeln(0, "using v8::Exception;");
-        self.writeln(0, "using v8::Function;");
-        self.writeln(0, "using v8::FunctionTemplate;");
-        self.writeln(0, "using v8::FunctionCallbackInfo;");
-        self.writeln(0, "using v8::Isolate;");
-        self.writeln(0, "using v8::Local;");
-        self.writeln(0, "using v8::Null;");
-        self.writeln(0, "using v8::Number;");
-        self.writeln(0, "using v8::Object;");
-        self.writeln(0, "using v8::String;");
-        self.writeln(0, "using v8::False;");
-        self.writeln(0, "using v8::True;");
-        self.writeln(0, "using v8::Value;\n");
+        emit!(self, "using v8::Array;");
+        emit!(self, "using v8::Boolean;");
+        emit!(self, "using v8::Context;");
+        emit!(self, "using v8::Exception;");
+        emit!(self, "using v8::Function;");
+        emit!(self, "using v8::FunctionTemplate;");
+        emit!(self, "using v8::FunctionCallbackInfo;");
+        emit!(self, "using v8::Isolate;");
+        emit!(self, "using v8::Local;");
+        emit!(self, "using v8::Null;");
+        emit!(self, "using v8::Number;");
+        emit!(self, "using v8::Object;");
+        emit!(self, "using v8::String;");
+        emit!(self, "using v8::False;");
+        emit!(self, "using v8::True;");
+        emit!(self, "using v8::Value;\n");
     }
 
     fn generate_postfix(&mut self) {
         if self.use_node {
-            self.writeln(0, "void Init(Local<Object> exports) {");
-            self.writeln(1, "NODE_SET_METHOD(exports, \"jsc_main\", jsc_main);");
-            self.writeln(0, "}\n");
-            self.writeln(0, "NODE_MODULE(NODE_GYP_MODULE_NAME, Init)");
+            emit!(self, "void Init(Local<Object> exports) {");
+            emit!(self, 1, "NODE_SET_METHOD(exports, \"jsc_main\", jsc_main);");
+            emit!(self, "}\n");
+            emit!(self, "NODE_MODULE(NODE_GYP_MODULE_NAME, Init)");
         } else {
-            self.writeln(0, "
+            emit!(self, "
 int main(int argc, char* argv[]) {
   int exit_code;
   
