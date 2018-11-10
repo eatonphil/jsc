@@ -40,7 +40,8 @@ pub fn build_standalone<S>(dir_s: S, modules: Vec<String>) where S: Into<String>
 
     let mut args: Vec<String> = modules.iter().map(|m| format!("{}.cc", m)).collect();
     let entry = modules[0].as_str();
-    let mut rest: Vec<String> = vec!["-o", entry, "-lrt", "-ldl", "-pthread", "-std=c++0x"]
+    // TODO: don't hardcode paths
+    let mut rest: Vec<String> = vec!["-o", entry, "-I/usr/local/Cellar/node/11.1.0/include/node", "-ldl", "-pthread", "-std=c++0x"]
         .iter()
         .map(|arg| arg.to_string())
         .collect();

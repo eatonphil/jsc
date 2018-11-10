@@ -14,5 +14,6 @@ function main() {
     a[a.length] = 999;
     console.log('length: ', a.length);
     console.log(a[0]);
-    a.map(debug);
+    console.log(Object.keys(a));
+    a.forEach(debug);
 }

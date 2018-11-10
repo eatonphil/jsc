@@ -734,10 +734,9 @@ impl CG {
 
             emit!(self, "\n#include <node.h>\n");
         } else {
-            emit!(self, "#include <stdio>");
-            emit!(self, "#include <stdlib>");
+            emit!(self, "#include <iostream>");
 
-            emit!(self, "#include <libplatform.h>");
+            emit!(self, "#include <libplatform/libplatform.h>");
             emit!(self, "#include <v8.h>\n");
         }
 
@@ -793,7 +792,7 @@ int main(int argc, char* argv[]) {
     v8::Context::Scope context_scope(context);
 
     {
-      Local<FunctionTemplate> entry_fntpl = FunctionTemplate::New(isolate, __jsc_main);
+      Local<FunctionTemplate> entry_fntpl = FunctionTemplate::New(isolate, jsc_main);
       Local<Function> entry_fn = entry_fntpl->GetFunction();
 
       // TODO: pass args
