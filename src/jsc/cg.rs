@@ -33,7 +33,7 @@ impl Scope {
 }
 
 pub struct CG {
-    ast: easter::prog::Script,
+    ast: easter::stmt::Script,
     output_file: File,
     use_node: bool,
     generated_funcs: Vec<String>,
@@ -84,11 +84,11 @@ impl CG {
         depth: usize,
         id: &easter::id::Id,
         params: &easter::fun::Params,
-        body: &Vec<easter::stmt::StmtListItem>,
+        body: &easter::stmt::Body<easter::stmt::StmtListItem>,
         scope: &mut Scope,
         _: &Option<TCO>
     ) {
-        let name = if id.is_some() {
+        let name = {
             let local = id.name.as_ref();
             if local == "main" {
                 "jsc_main".to_string()
@@ -97,8 +97,6 @@ impl CG {
                 self.generated_funcs.push(safe.clone());
                 safe
             }
-        } else {
-            "lambda".to_string()
         };
 
         emit!(self, depth, "void {}(const FunctionCallbackInfo<Value>& args) {{", name);
@@ -121,7 +119,7 @@ impl CG {
         emit!(self, 0, "{}:", tail_recurse_label);
 
         let new_scope = &mut scope.clone();
-        self.generate_statements(depth + 1, body, new_scope, &Some (TCO {
+        self.generate_statements(depth + 1, &body.items, new_scope, &Some (TCO {
             name: name.to_string(),
             label: tail_recurse_label,
             params: param_strings
@@ -196,7 +194,7 @@ impl CG {
         &mut self,
         depth: usize,
         expression: &easter::expr::Expr,
-        args: &Vec<easter::expr::Expr>,
+        args: &Vec<easter::expr::ExprListItem>,
         scope: &mut Scope,
         tco: &Option<TCO>
     ) -> String {
@@ -204,7 +202,11 @@ impl CG {
 
         let args_len = args.len();
         let mut argv_items = Vec::with_capacity(args_len);
-        for arg in args.iter() {
+        for arg_or_spread in args.iter() {
+            let arg = match arg_or_spread {
+                easter::expr::ExprListItem::Expr(expr) => expr,
+                _ => panic!("spread operator not supported")
+            };
             let (arg_holder, _) = self.generate_expression(depth, arg, scope, &None);
             let tmp = scope.register("arg");
 
@@ -401,24 +403,26 @@ impl CG {
     fn generate_assign(
         &mut self,
         depth: usize,
-        assop: &easter::punc::Assop,
+        assop: Option<&easter::punc::Assop>,
         patt: &easter::patt::AssignTarget,
         body: &easter::expr::Expr,
         scope: &mut Scope
     ) -> String {
-        let op = match assop.tag {
-            easter::punc::AssopTag::Eq => "=",
-            easter::punc::AssopTag::PlusEq => "+=",
-            easter::punc::AssopTag::MinusEq => "-=",
-            easter::punc::AssopTag::TimesEq => "*=",
-            easter::punc::AssopTag::DivEq => "/=",
-            easter::punc::AssopTag::ModEq => "%=",
-            easter::punc::AssopTag::LShiftEq => "<<=",
-            easter::punc::AssopTag::RShiftEq => ">>=",
-            easter::punc::AssopTag::URShiftEq => ">>>=",
-            easter::punc::AssopTag::BitOrEq => "|=",
-            easter::punc::AssopTag::BitXorEq => "^=",
-            easter::punc::AssopTag::BitAndEq => "&="
+        let op = match assop {
+            Some (easter::punc::Op { tag, .. }) => match tag {
+                easter::punc::AssopTag::PlusEq => "+=",
+                easter::punc::AssopTag::MinusEq => "-=",
+                easter::punc::AssopTag::TimesEq => "*=",
+                easter::punc::AssopTag::DivEq => "/=",
+                easter::punc::AssopTag::ModEq => "%=",
+                easter::punc::AssopTag::LShiftEq => "<<=",
+                easter::punc::AssopTag::RShiftEq => ">>=",
+                easter::punc::AssopTag::URShiftEq => ">>>=",
+                easter::punc::AssopTag::BitOrEq => "|=",
+                easter::punc::AssopTag::BitXorEq => "^=",
+                easter::punc::AssopTag::BitAndEq => "&=",
+            },
+            None => "="
         };
 
         let target: String = match patt {
@@ -447,19 +451,20 @@ impl CG {
     fn generate_array(
         &mut self,
         depth: usize,
-        elements: &Vec<Option<easter::expr::Expr>>,
+        elements: &Vec<Option<easter::expr::ExprListItem>>,
         scope: &mut Scope
     ) -> String {
         let tmp = scope.register("array");
 
         emit!(self, depth, "Local<Array> {} = Array::New(isolate, {});", tmp, elements.len());
 
-        for (i, maybe_arg) in elements.iter().enumerate() {
-            let element = match maybe_arg {
-                Some (arg) => {
+        for (i, maybe_arg_or_spread) in elements.iter().enumerate() {
+            let element = match maybe_arg_or_spread {
+                Some (easter::expr::ExprListItem::Expr(arg)) => {
                     let (value, _) = self.generate_expression(depth, arg, scope, &None);
                     value
                 },
+                Some (_) => panic!("spread operator not supported"),
                 None => v8_null!(),
             };
 
@@ -528,10 +533,12 @@ impl CG {
                 (self.generate_binop(depth, op, exp1, exp2, scope), v8_null!()),
             &easter::expr::Expr::Dot(_, ref object, ref accessor) =>
                 self.generate_dot(depth, object, accessor, scope),
-            &easter::expr::Expr::Assign(_, ref assop, ref target_patt, ref body) =>
+            &easter::expr::Expr::BinAssign(_, ref assop, ref target, ref body) =>
+                (self.generate_assign(depth, Some(assop), target, body, scope), v8_null!()),
+            &easter::expr::Expr::Assign(_, ref target_patt, ref body) =>
                 (match target_patt {
                     &easter::patt::Patt::Simple (ref target) =>
-                        self.generate_assign(depth, assop, &target, body, scope),
+                        self.generate_assign(depth, None, target, body, scope),
                     _ =>
                         panic!("Got complex assignment (destructuring): {:#?}", expression)
                 }, v8_null!()),
@@ -562,6 +569,21 @@ impl CG {
         };
         let safe_name = scope.register(id.name.as_ref());
         emit!(self, depth, "Local<Value> {}{};", safe_name, suffix);
+    }
+
+    fn generate_const_destructor(
+        &mut self,
+        depth: usize,
+        destructor: &easter::decl::ConstDtor,
+        scope: &mut Scope
+    ) {
+        let easter::decl::ConstDtor { patt, ref value, .. } = destructor;
+        match patt {
+            &easter::patt::Patt::Simple (ref id) =>
+                self.generate_declaration(depth, id, &Some(value.clone()), scope),
+            _ =>
+                panic!("found destructor: {:#?}", destructor),
+        }
     }
 
     fn generate_destructor(
@@ -704,8 +726,8 @@ impl CG {
                 self.generate_condition(depth, test, ok, nok, scope, tco),
             &easter::stmt::Stmt::While(_, ref test, ref body) =>
                 self.generate_while(depth, test, body, scope, tco),
-            &easter::stmt::Stmt::Block(_, ref statements) =>
-                self.generate_statements(depth, statements, scope, tco),
+            &easter::stmt::Stmt::Block(ref statements) =>
+                self.generate_statements(depth, &statements.items, scope, tco),
             _ => panic!("found stmt: {:#?}", statement),
         }
     }
@@ -723,10 +745,13 @@ impl CG {
                 &easter::stmt::StmtListItem::Decl(
                     easter::decl::Decl::Fun(
                         easter::fun::Fun { ref id, ref params, ref body, .. })) =>
-                    match id {
-                        &Some(ref id) => self.generate_function_declaration(depth, id, params, body, scope, &None),
-                        _ => panic!("anonymous function declarations not supported")
-                    },
+                    self.generate_function_declaration(depth, id, params, body, scope, &None),
+                &easter::stmt::StmtListItem::Decl(
+                    easter::decl::Decl::Let(_, ref destructor_list, _)) =>
+                    iter::Iterator::for_each(destructor_list.iter(), |dtor| self.generate_destructor(depth, dtor, scope)),
+                &easter::stmt::StmtListItem::Decl(
+                    easter::decl::Decl::Const(_, ref const_destructor_list, _)) =>
+                    iter::Iterator::for_each(const_destructor_list.iter(), |dtor| self.generate_const_destructor(depth, dtor, scope)),
                 &easter::stmt::StmtListItem::Stmt(ref s) =>
                     self.generate_statement(depth, s, scope, if i == len - 1 { tco } else { &None })
             }
@@ -823,8 +848,8 @@ int main(int argc, char* argv[]) {
         // Need to work around a mix of immutable and mutable use of self to
         // grab ast here and call generate_statements later.
         let mut body = Vec::new();
-        while self.ast.body.len() > 0 {
-            body.push(self.ast.body.remove(0));
+        while self.ast.items.len() > 0 {
+            body.push(self.ast.items.remove(0));
         }
 
         self.generate_statements(0, &body, &mut Scope::new(), &None);
@@ -832,7 +857,7 @@ int main(int argc, char* argv[]) {
     }
 
     pub fn new<S>(
-        ast: easter::prog::Script,
+        ast: easter::stmt::Script,
         output_directory: S,
         module_name: S,
         use_node: bool
