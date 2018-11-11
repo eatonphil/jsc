@@ -20,12 +20,15 @@ hey there
 
 ### Features
 
-* Function calls
+* Functions and function calls
   * Tail-call optimization
+* Let, const, var	
 * Primitive numeric operations
 * Arrays
 * Numbers
 * Strings
+* Boolean
+* Null
 
 #### Not (yet) supported
 
