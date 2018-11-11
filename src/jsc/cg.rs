@@ -4,6 +4,7 @@ use std::iter;
 use std::collections::HashMap;
 
 extern crate easter;
+extern crate joker;
 
 #[derive(Clone)]
 struct Scope {
@@ -429,9 +430,13 @@ impl CG {
             &easter::patt::AssignTarget::Brack (_, ref object, ref accessor) => {
                 return self.generate_object_modify(depth, object, accessor, body, scope);
             },
-            // TODO: support dot assignment
-            _ =>
-                panic!("Unsupported assign target: {:#?}", assop.tag)
+            &easter::patt::AssignTarget::Dot(_, ref object, ref key) => {
+                let accessor = easter::expr::Expr::String(None, joker::token::StringLiteral {
+                    source: None,
+                    value: key.value.clone(),
+                });
+                return self.generate_object_modify(depth, object, &accessor, body, scope);
+            },
         };
 
         let (body_gen, _) = self.generate_expression(depth, body, scope, &None);
@@ -500,6 +505,7 @@ impl CG {
         match expression {
             &easter::expr::Expr::Call(_, ref name, ref args) =>
                 (self.generate_call(depth, name, args, scope, tco), v8_null!()),
+            &easter::expr::Expr::Null(_) => (v8_null!(), v8_null!()),
             &easter::expr::Expr::Id(ref id) => {
                 let local = id.name.as_ref();
                 (match scope.map.get(local) {
