@@ -6,7 +6,7 @@ cases:
 templates:
 - test.js: |
     function main() {
-      const object = Object.create(null);
+      var object = Object.create(null);
       object.test = "fickle";
       console.log(object.test);
     }
