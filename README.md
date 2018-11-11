@@ -33,7 +33,6 @@ hey there
 #### Not (yet) supported
 
 * Prototype functions
-* Objects
 * Nested functions
 * Closures
 * And/or operators
