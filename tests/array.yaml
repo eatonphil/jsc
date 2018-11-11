@@ -21,7 +21,7 @@ cases:
 templates:
 - test.js: |
     function main() {
-      var a = [5, 111, 19];
+      const a = [5, 111, 19];
       {{ side_effects }}
       console.log(a[{{ test }}]);
     }
