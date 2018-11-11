@@ -1,7 +1,7 @@
 cases:
   - name: simple object literal
     status: 0
-    stdout: ""
+    stdout: "{ elk: 2, flubs: 3 }\n"
 
 templates:
 - test.js: |
@@ -10,3 +10,4 @@ templates:
       a.flubs = 3;
       console.log(a);
     }
+
