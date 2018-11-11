@@ -6,8 +6,8 @@ cases:
 templates:
 - test.js: |
     function main() {
-      var a = 1;
-      var b = 2;
-      var c = a + b;
+      const a = 1;
+      const b = 2;
+      const c = a + b;
       console.log(c);
     }

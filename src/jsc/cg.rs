@@ -558,8 +558,10 @@ impl CG {
         depth: usize,
         id: &easter::id::Id,
         expression: &Option<easter::expr::Expr>,
+        is_const: bool,
         scope: &mut Scope
     ) {
+        let prefix = if is_const { "const " } else { "" };
         let suffix = match expression {
             &Some (ref exp) => {
                 let (generated, _) = self.generate_expression(depth, &exp, scope, &None);
@@ -568,7 +570,7 @@ impl CG {
             _ => "".to_string(),
         };
         let safe_name = scope.register(id.name.as_ref());
-        emit!(self, depth, "Local<Value> {}{};", safe_name, suffix);
+        emit!(self, depth, "{}Local<Value> {}{};", prefix, safe_name, suffix);
     }
 
     fn generate_const_destructor(
@@ -580,7 +582,7 @@ impl CG {
         let easter::decl::ConstDtor { patt, ref value, .. } = destructor;
         match patt {
             &easter::patt::Patt::Simple (ref id) =>
-                self.generate_declaration(depth, id, &Some(value.clone()), scope),
+                self.generate_declaration(depth, id, &Some(value.clone()), true, scope),
             _ =>
                 panic!("found destructor: {:#?}", destructor),
         }
@@ -594,7 +596,7 @@ impl CG {
     ) {
         match destructor {
             &easter::decl::Dtor::Simple(_, ref id, ref expr) =>
-                self.generate_declaration(depth, id, expr, scope),
+                self.generate_declaration(depth, id, expr, false, scope),
             _ =>
                 panic!("found destructor: {:#?}", destructor),
         }
