@@ -6,7 +6,7 @@ use std::collections::HashMap;
 extern crate easter;
 extern crate joker;
 
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 struct Scope {
     map: HashMap<String, String>,
     counter: Box<usize>
@@ -61,6 +61,27 @@ macro_rules! emit {
     ($self: expr, $depth: expr, $format: expr, $( $arg: expr ),* ) => ($self.writeln($depth, format!($format, $( $arg, )*)));
     ($self: expr, $depth: expr, $string: expr ) => ($self.writeln($depth, $string));
     ($self: expr, $string: expr ) => ($self.writeln(0, $string))
+}
+
+fn id_expr(string: String) -> easter::expr::Expr {
+    easter::expr::Expr::Id (easter::id::Id {
+        location: None,
+        name: joker::word::Name::String(string),
+    })
+}
+
+fn string_expr(string: String) -> easter::expr::Expr {
+    easter::expr::Expr::String(None, joker::token::StringLiteral {
+        source: None,
+        value: string,
+    })
+}
+
+fn number_expr(number: f64) -> easter::expr::Expr {
+    easter::expr::Expr::Number(None, joker::token::NumberLiteral {
+        source: None,
+        value: number,
+    })
 }
 
 impl CG {
@@ -435,10 +456,7 @@ impl CG {
                 return self.generate_object_modify(depth, object, accessor, body, scope);
             },
             &easter::patt::AssignTarget::Dot(_, ref object, ref key) => {
-                let accessor = easter::expr::Expr::String(None, joker::token::StringLiteral {
-                    source: None,
-                    value: key.value.clone(),
-                });
+                let accessor = string_expr(key.value.clone());
                 return self.generate_object_modify(depth, object, &accessor, body, scope);
             },
         };
@@ -474,16 +492,47 @@ impl CG {
         tmp
     }
 
+    fn generate_object(
+        &mut self,
+        depth: usize,
+        props: &Vec<easter::obj::Prop>,
+        scope: &mut Scope
+    ) -> String {
+        let unsafe_local = "object";
+        let tmp = scope.register(unsafe_local.to_string());
+
+        emit!(self, depth, "Local<Object> {} = Object::New(isolate);", tmp);
+
+        let tmp_expr = &id_expr(unsafe_local.to_string());
+        for prop in props.iter() {
+            match prop {
+                easter::obj::Prop::Regular(_, key, easter::obj::PropVal::Init(val)) => {
+                    let key_expr = match key {
+                        // Handles key/value pairs where key is unquoted: { elk: 2 } (vs. { 'elk': 2 })
+                        easter::obj::PropKey::Id(_, id) => string_expr(id.to_string()),
+                        easter::obj::PropKey::String(_, s) => string_expr(s.value.clone()),
+                        easter::obj::PropKey::Number(_, n) => number_expr(n.value.clone()),
+                    };
+                    let modify = self.generate_object_modify(depth, tmp_expr, &key_expr, val, scope);
+                    emit!(self, depth, "{};", modify)
+                },
+                _ => panic!("methods and shorthand, object getter/setter unsupported"),
+            }
+        }
+
+        tmp
+    }
+
     fn generate_object_lookup(
         &mut self,
         depth: usize,
         object: &easter::expr::Expr,
         accessor: &easter::expr::Expr,
         scope: &mut Scope,
-    ) -> String {
+    ) -> (String, String) {
         let (object_tmp, _) = self.generate_expression(depth, object, scope, &None);
         let (accessor_tmp, _) = self.generate_expression(depth, accessor, scope, &None);
-        format!("{}.As<Object>()->Get({})", object_tmp, accessor_tmp)
+        (format!("{}.As<Object>()->Get({})", object_tmp, accessor_tmp), object_tmp)
     }
 
     fn generate_object_modify(
@@ -546,8 +595,10 @@ impl CG {
             &easter::expr::Expr::False(_) => ("False(isolate)".to_string(), v8_null!()),
             &easter::expr::Expr::Arr(_, ref elements) =>
                 (self.generate_array(depth, elements, scope), v8_null!()),
+            &easter::expr::Expr::Obj(_, ref props) =>
+                (self.generate_object(depth, props, scope), v8_null!()),
             &easter::expr::Expr::Brack(_, ref object, ref accessor) =>
-                (self.generate_object_lookup(depth, object, accessor, scope), v8_null!()),
+                self.generate_object_lookup(depth, object, accessor, scope),
             _ =>
                 panic!("Got expression: {:#?}", expression),
         }
