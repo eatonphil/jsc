@@ -5,8 +5,8 @@ cases:
 
 templates:
 - test.js: |
-    function main() {{
-      const a = {{ elk: 2 }};
+    function main() {
+      const a = { elk: 2 };
       a.flubs = 3;
       console.log(a);
-    }}
+    }
