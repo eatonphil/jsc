@@ -1,0 +1,12 @@
+cases:
+  - name: simple dot assignment
+    status: 0
+    stdout: "fickle\n"
+
+templates:
+- test.js: |
+    function main() {
+      var object = Object.create(null);
+      object.test = "fickle";
+      console.log(object.test);
+    }

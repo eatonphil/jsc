@@ -7,6 +7,7 @@ authors = ["Phil Eaton <philneaton95@gmail.com>"]
 clap = "~2.27.0"
 esprit = "~0.0.5"
 easter = "~0.0.5"
+joker = "~0.0.5"
 serde = "~1.0"
 serde_json = "~1.0"
 serde_derive = "~1.0"
