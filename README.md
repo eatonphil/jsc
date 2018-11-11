@@ -23,12 +23,8 @@ hey there
 * Functions and function calls
   * Tail-call optimization
 * Let, const, var	
-* Primitive numeric operations
-* Arrays
-* Numbers
-* Strings
-* Boolean
-* Null
+* Most primitive operations
+* Object, array, number, string, boolean and null literals
 
 #### Not (yet) supported
 
