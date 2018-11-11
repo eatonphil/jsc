@@ -1,12 +1,12 @@
 cases:
   - name: simple object literal
     status: 0
-    stdout: "{ elk: 2, flubs: 3 }\n"
+    stdout: ""
 
 templates:
 - test.js: |
     function main() {
-      const a = {{ elk: 2 }};
+      const a = { elk: 2 };
       a.flubs = 3;
       console.log(a);
     }
