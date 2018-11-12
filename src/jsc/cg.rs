@@ -86,9 +86,7 @@ fn number_expr(number: f64) -> easter::expr::Expr {
 
 impl CG {
     fn writeln<S>(&mut self, depth: usize, output: S) where S: Into<String> {
-        let spaces = 2;
-        let indents = iter::repeat(" ").take(depth * spaces).collect::<String>();
-        let line = format!("{}{}\n", indents, output.into());
+        let with_indentation = indent(depth, output);
         self.output_file.write_all(line.as_bytes()).expect("failed to write")
     }
 
@@ -763,6 +761,9 @@ impl CG {
         scope: &mut Scope,
         tco: &Option<TCO>
     ) {
+        let lines = print_statement(statement).split("\n");
+        iter::Iterator::for_each(&lines, |line| emit!(self, depth, "// {}", line));
+
         match statement {
             &easter::stmt::Stmt::Expr(_, ref e, _) => {
                 let (gen, _) = self.generate_expression(depth, e, scope, tco);
@@ -783,6 +784,8 @@ impl CG {
                 self.generate_statements(depth, &statements.items, scope, tco),
             _ => panic!("found stmt: {:#?}", statement),
         }
+
+        self.writeln(0, "");
     }
 
     fn generate_statements(
