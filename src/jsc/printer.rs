@@ -1,3 +1,5 @@
+extern crate easter;
+
 use std::iter::*;
 
 use ::jsc::util;

@@ -25,6 +25,7 @@ hey there
 * Let, const, var	
 * Most primitive operations
 * Object, array, number, string, boolean and null literals
+* Basic source-to-source comments for debugging generated output
 
 #### Not (yet) supported
 
