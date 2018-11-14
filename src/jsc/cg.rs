@@ -1,10 +1,13 @@
-use std::fs::File;
-use std::io::Write;
-use std::iter;
-use std::collections::HashMap;
-
 extern crate easter;
 extern crate joker;
+
+use std::fs::File;
+use std::io::Write;
+use std::iter::*;
+use std::collections::HashMap;
+
+use ::jsc::util;
+use ::jsc::printer::*;
 
 #[derive(Clone, Debug)]
 struct Scope {
@@ -86,8 +89,8 @@ fn number_expr(number: f64) -> easter::expr::Expr {
 
 impl CG {
     fn writeln<S>(&mut self, depth: usize, output: S) where S: Into<String> {
-        let with_indentation = indent(depth, output);
-        self.output_file.write_all(line.as_bytes()).expect("failed to write")
+        let with_indentation = util::indent(depth, format!("{}\n", output.into()));
+        self.output_file.write_all(with_indentation.as_bytes()).expect("failed to write")
     }
 
     fn generate_debug<S>(
@@ -135,7 +138,7 @@ impl CG {
         }
 
         let tail_recurse_label = scope.register("tail_recurse");
-        emit!(self, 0, "{}:", tail_recurse_label);
+        emit!(self, 0, "{}:\n", tail_recurse_label);
 
         let new_scope = &mut scope.clone();
         self.generate_statements(depth + 1, &body.items, new_scope, &Some (TCO {
@@ -761,8 +764,7 @@ impl CG {
         scope: &mut Scope,
         tco: &Option<TCO>
     ) {
-        let lines = print_statement(statement).split("\n");
-        iter::Iterator::for_each(&lines, |line| emit!(self, depth, "// {}", line));
+        print_source(depth, statement.clone(), |out| emit!(self, out));
 
         match statement {
             &easter::stmt::Stmt::Expr(_, ref e, _) => {
@@ -803,11 +805,19 @@ impl CG {
                         easter::fun::Fun { ref id, ref params, ref body, .. })) =>
                     self.generate_function_declaration(depth, id, params, body, scope, &None),
                 &easter::stmt::StmtListItem::Decl(
-                    easter::decl::Decl::Let(_, ref destructor_list, _)) =>
-                    iter::Iterator::for_each(destructor_list.iter(), |dtor| self.generate_destructor(depth, dtor, scope)),
+                    easter::decl::Decl::Let(_, ref destructor_list, _)) => {
+                    destructor_list.iter().for_each(|dtor| {
+                        print_source(depth, dtor.clone(), |out| emit!(self, out));
+                        self.generate_destructor(depth, dtor, scope);
+                    });
+                    self.writeln(0, "");
+                },
                 &easter::stmt::StmtListItem::Decl(
-                    easter::decl::Decl::Const(_, ref const_destructor_list, _)) =>
-                    iter::Iterator::for_each(const_destructor_list.iter(), |dtor| self.generate_const_destructor(depth, dtor, scope)),
+                    easter::decl::Decl::Const(_, ref const_destructor_list, _)) => {
+                    const_destructor_list.iter().for_each(
+                        |dtor| self.generate_const_destructor(depth, dtor, scope));
+                    self.writeln(0, "");
+                },
                 &easter::stmt::StmtListItem::Stmt(ref s) =>
                     self.generate_statement(depth, s, scope, if i == len - 1 { tco } else { &None })
             }
