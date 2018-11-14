@@ -68,7 +68,7 @@ impl Printer for easter::expr::Expr {
             easter::expr::Expr::String(_, ref string) => string.value.clone(),
             easter::expr::Expr::Number(_, ref number) => number.value.to_string(),
             easter::expr::Expr::Binop(_, ref op, ref exp1, ref exp2) =>
-                format!("{} {} {}", op, exp1.print(depth), exp2.print(depth)),
+                format!("{} {} {}", exp1.print(depth), op, exp2.print(depth)),
             easter::expr::Expr::Dot(_, ref object, ref accessor) =>
                 format!("{}.{}", object.print(depth), accessor.value),
             easter::expr::Expr::BinAssign(_, ref assop, ref target, ref value) =>
