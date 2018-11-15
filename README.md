@@ -107,7 +107,6 @@ tail_recurse_4:
     return;
 
 
-    return;
   }
 
   Local<Context> ctx_14 = isolate->GetCurrentContext();
@@ -125,7 +124,6 @@ tail_recurse_4:
     return;
 
 
-    return;
   }
 
   // return fib(n - 1, b, a + b);
