@@ -728,7 +728,6 @@ impl CG {
 
         emit!(self, depth, "if ({}->ToBoolean()->Value()) {{", result);
         self.generate_statement(depth + 1, ok, scope, tco);
-        emit!(self, depth + 1, "return;");
 
         match nok {
             &Some (ref stmt) => {
