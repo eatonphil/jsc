@@ -11,20 +11,20 @@ export function build(buildDirectory: string, program: string) {
     fs.mkdirSync(buildDirectory);
   } catch (e) {}
 
-  fs.writeFileSync(path.join(buildDirectory, 'lib.cc'), program);
+  fs.writeFileSync(path.join(buildDirectory, 'jsc.cc'), program);
   fs.writeFileSync(path.join(buildDirectory, 'binding.gyp'), JSON.stringify({
     targets: [
       {
-	target_name: 'lib',
-	sources: [path.join(buildDirectory, 'lib.cc')],
+	target_name: 'jsc',
+	sources: ['jsc.cc'],
       },
     ],
   }));
 
   // Build library
-  cp.execSync('node-gyp configure', { cwd: buildDirectory });
-  cp.execSync('node-gyp build', { cwd: buildDirectory });
+  cp.execSync('../node_modules/.bin/node-gyp configure', { cwd: buildDirectory });
+  cp.execSync('../node_modules/.bin/node-gyp build', { cwd: buildDirectory });
 
   // Create Node entrypoint
-  fs.writeFileSync(path.join(buildDirectory, 'index.js'), 'require(\"./build/Release/lib.node\").jsc_main();\n');
+  fs.writeFileSync(path.join(buildDirectory, 'index.js'), 'require(\"./build/Release/jsc.node\").jsc_main();\n');
 }

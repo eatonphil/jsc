@@ -3,15 +3,20 @@ import { readFileSync } from 'fs';
 
 import * as ts from 'typescript';
 
+enum Type {
+  V8Value,
+  V8Function,
+}
+
 class Local {
   initialized?: boolean;
   name: string;
-  type?: string;
+  type: Type;
 
-  constructor(name: string, initialized?: boolean, type?: string) {
+  constructor(name: string, initialized?: boolean, type?: Type) {
     this.name = name;
     this.initialized = initialized;
-    this.type = type;
+    this.type = type || Type.V8Value;
   }
 }
 
@@ -20,7 +25,7 @@ let uniqueCounter = 0;
 class Context {
   map: { [local: string]: Local } = {};
 
-  symbol(prefix?: string, initialized?: boolean, type?: string) {
+  symbol(prefix?: string, initialized?: boolean, type?: Type) {
     let mapped;
     do {
       mapped = 'sym_' + (prefix || 'anon') + '_' + (uniqueCounter++);
@@ -30,7 +35,7 @@ class Context {
     return this.map[mapped];
   }
 
-  register(local: string, initialized?: boolean, type?: string) {
+  register(local: string, initialized?: boolean, type?: Type) {
     let mapped = local;
     while (this.map[mapped]) {
       mapped = local + '_' + Object.keys(this.map);
@@ -58,15 +63,27 @@ function emit(
   buffer.push(new Array(indentation + 1).join('  ') + output);
 }
 
+function emitStatement(
+  buffer: string[],
+  indentation: number,
+  output: string,
+) {
+  emit(buffer, indentation, output + ';');
+}
+
 function emitAssign(buffer: string[], depth: number, destination: Local, val: string) {
   if (!destination.initialized) {
-    // TODO: initialize using type info
-    emit(buffer, depth, `Local<Value> ${destination.name} = ${val};`);
+    const type = destination.type === Type.V8Value ? 'Local<Value>' : 'Local<Function>';
+    emitStatement(buffer, depth, `${type} ${destination.name} = ${val}`);
     destination.initialized = true;
     return;
   }
 
-  emit(buffer, depth, `${destination.name} = ${val}`);
+  emitStatement(buffer, depth, `${destination.name} = ${val}`);
+}
+
+function formatString(raw: string) {
+  return `String::NewFromUtf8(isolate, "${raw}")`;
 }
 
 function mangle(moduleName: string, local: string) {
@@ -100,11 +117,12 @@ function compileFunctionDeclaration(
 
   // Anonymous function declarations don't get added to context.
   if (id) {
-    context.register(mangled);
+    context.register(name);
   }
 
   emit(buffer, 0, `void ${mangled}(const FunctionCallbackInfo<Value>& args) {`);
-  emit(buffer, 1, `Isolate* isolate = args.GetIsolate();`);
+  emitStatement(buffer, 1, `Isolate* isolate = args.GetIsolate()`);
+  emit(buffer, 0, '');
 
   // TODO: handle args
 
@@ -113,7 +131,7 @@ function compileFunctionDeclaration(
     compileBlock(buffer, childContext, moduleName, body);
   }
   
-  emit(buffer, 0, '}');
+  emit(buffer, 0, '}\n');
 }
 
 function compileCall(
@@ -123,9 +141,6 @@ function compileCall(
   destination: Local,
   ce: ts.CallExpression,
 ) {
-  const fn = context.symbol('fn');
-  compileNode(buffer, context, moduleName, fn, ce.expression);
-
   const args = ce.arguments.map(function (argument) {
     const arg = context.symbol('arg');
     compileNode(buffer, context, moduleName, arg, argument);
@@ -133,12 +148,32 @@ function compileCall(
   });
 
   const argArray = context.symbol('args');
-  emit(buffer, 1, `Local<Value> ${argArray.name}[] = { ${args.join(', ')} };`);
+  if (args.length) {
+    emitStatement(buffer, 1, `Local<Value> ${argArray.name}[] = { ${args.join(', ')} }`);
+  }
 
-  emitAssign(buffer, 1, destination, `Local<Function>::Cast(${fn.name})->Call(
-    ${fn.name},
-    ${args.length},
-    ${argArray.name})`);
+  const fn = context.symbol('fn', false, Type.V8Function);
+  let literal = false;
+  if (ce.expression.kind === ts.SyntaxKind.Identifier) {
+    const id = identifier(ce.expression as ts.Identifier);
+    if (context.get(id)) {
+      literal = true;
+      const mangled = mangle(moduleName, id);
+      emitAssign(buffer, 1, fn, `FunctionTemplate::New(isolate, ${mangled})->GetFunction()`);
+      emitStatement(buffer, 1, `${fn.name}->SetName(${formatString(mangled)})`);
+    }
+  }
+
+  if (!literal) {
+    const tmp = context.symbol();
+    compileNode(buffer, context, moduleName, tmp, ce.expression);
+    emitAssign(buffer, 1, fn, `Local<Function>::Cast(${tmp.name})`);
+  }
+
+  const argArrayName = args.length ? argArray.name : 0;
+  const call = `${fn.name}->Call(${fn.name}, ${args.length}, ${argArrayName})`;
+  emitAssign(buffer, 1, destination, call);
+  emit(buffer, 0, '');
 }
 
 function compilePropertyAccess(
@@ -151,7 +186,7 @@ function compilePropertyAccess(
   const exp = context.symbol('parent');
   compileNode(buffer, context, moduleName, exp, pae.expression);
   const id = identifier(pae.name);
-  emitAssign(buffer, 1, destination, `${exp.name}.As<Object>()->Get(String::NewFromUtf8(isolate, "${id}");`);
+  emitAssign(buffer, 1, destination, `${exp.name}.As<Object>()->Get(${formatString(id)})`);
 }
 
 function compileIdentifier(
@@ -162,15 +197,27 @@ function compileIdentifier(
   id: ts.Identifier,
 ) {
   let val = identifier(id);
-  if (context.get(val)) { 
+  if (context.get(val)) {
     val = mangle(moduleName, val);
   } else if (val === 'global') {
     val = 'isolate->GetCurrentContext()->Global()';
   } else {
-    val = 'isolate->GetCurrentContext()->Global()->Get(String::NewFromUtf8(isolate, "${val}"))';
+    val = `isolate->GetCurrentContext()->Global()->Get(${formatString(val)})`;
   }
 
   emitAssign(buffer, 1, destination, val);
+}
+
+function compileReturn(
+  buffer: string[],
+  context: Context,
+  moduleName: string,
+  exp: ts.Expression,
+) {
+  const tmp = context.symbol();
+  compileNode(buffer, context, moduleName, tmp, exp);
+  emitStatement(buffer, 1, `args.GetReturnValue().Set(${tmp.name})`);
+  emitStatement(buffer, 1, 'return');
 }
 
 function compileNode(
@@ -203,7 +250,11 @@ function compileNode(
       break;
     case ts.SyntaxKind.StringLiteral:
       const sl = node as ts.StringLiteral;
-      emitAssign(buffer, 1, destination, `String::NewFromUtf8(isolate, "${sl.text}")`);
+      emitAssign(buffer, 1, destination, formatString(sl.text));
+      break;
+    case ts.SyntaxKind.ReturnStatement:
+      const rs = node as ts.ReturnStatement;
+      compileReturn(buffer, context, moduleName, rs.expression);
       break;
     case ts.SyntaxKind.EndOfFileToken:
       break;
@@ -225,8 +276,7 @@ export function compileSource(
 }
 
 function emitPrefix(buffer: string[]) {
-  emit(buffer, 0, `
-#include <string>
+  emit(buffer, 0, `#include <string>
 #include <iostream>
 
 #include <node.h>
@@ -250,12 +300,11 @@ using v8::Value;\n`);
 }
 
 function emitPostfix(buffer: string[]) {
-    emit(buffer, 0, `
-void Init(Local<Object> exports) {
+    emit(buffer, 0, `void Init(Local<Object> exports) {
   NODE_SET_METHOD(exports, "jsc_main", jsc_main);
 }
 
-NODE_MODULE(NODE_GYP_MODULE_NAME, Init)`);
+NODE_MODULE(NODE_GYP_MODULE_NAME, Init)\n`);
 }
 
 export function compile(ast: ts.SourceFile) {
@@ -263,5 +312,5 @@ export function compile(ast: ts.SourceFile) {
   emitPrefix(buffer);
   compileSource(buffer, ast);
   emitPostfix(buffer);
-  return buffer.join('\n');
+  return buffer.join('\n').replace('\n\n}', '\n}');
 }
