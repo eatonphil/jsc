@@ -56,7 +56,7 @@ function main() {
 Gets compiled to:
 
 ```cpp
-// prefix omitted
+#include "lib.cc"
 
 void tco_fib(const FunctionCallbackInfo<Value>& _args) {
   Isolate* isolate = _args.GetIsolate();
@@ -66,29 +66,27 @@ tail_recurse_0:
 
   Local<Value> sym_rhs_4 = Number::New(isolate, 0);
   Local<Value> sym_anon_2 = args[0]->StrictEquals(sym_rhs_4) ? True(isolate) : False(isolate);
-  Local<Value> sym_anon_5[] = { sym_anon_2 };
-  Maybe<bool> sym_anon_6 = sym_anon_2->BooleanValue(isolate->GetCurrentContext());
-  if (sym_anon_6.IsJust() && sym_anon_6.FromJust()) {
+  if (toBoolean(sym_anon_2)) {
     _args.GetReturnValue().Set(args[1]);
     return;
   }
 
-  Local<Value> sym_rhs_13 = Number::New(isolate, 1);
-  Local<Value> sym_anon_11 = args[0]->StrictEquals(sym_rhs_13) ? True(isolate) : False(isolate);
-  Local<Value> sym_anon_14[] = { sym_anon_11 };
-  Maybe<bool> sym_anon_15 = sym_anon_11->BooleanValue(isolate->GetCurrentContext());
-  if (sym_anon_15.IsJust() && sym_anon_15.FromJust()) {
+  Local<Value> sym_rhs_11 = Number::New(isolate, 1);
+  Local<Value> sym_anon_9 = args[0]->StrictEquals(sym_rhs_11) ? True(isolate) : False(isolate);
+  if (toBoolean(sym_anon_9)) {
     _args.GetReturnValue().Set(args[2]);
     return;
   }
 
-  Local<Value> sym_rhs_23 = Number::New(isolate, 1);
-  Local<Value> sym_arg_21 = genericMinus(isolate, args[0], sym_rhs_23);
-  Local<Value> sym_arg_25 = genericPlus(isolate, args[1], args[2]);
-  args[0] = sym_arg_21;
+  Local<Value> sym_rhs_19 = Number::New(isolate, 1);
+  Local<Value> sym_arg_17 = genericMinus(isolate, args[0], sym_rhs_19);
+  Local<Value> sym_arg_21 = genericPlus(isolate, args[1], args[2]);
+  args[0] = sym_arg_17;
   args[1] = args[2];
-  args[2] = sym_arg_25;
+  args[2] = sym_arg_21;
   goto tail_recurse_0;
+
+  return;
 }
 
 void jsc_main(const FunctionCallbackInfo<Value>& _args) {
@@ -97,22 +95,28 @@ void jsc_main(const FunctionCallbackInfo<Value>& _args) {
   for (int i = 0; i < _args.Length(); i++) args[i] = _args[i];
 tail_recurse_1:
 
-  Local<Value> sym_arg_33 = Number::New(isolate, 100);
-  Local<Value> sym_arg_34 = Number::New(isolate, 0);
-  Local<Value> sym_arg_35 = Number::New(isolate, 1);
-  Local<Value> sym_args_36[] = { sym_arg_33, sym_arg_34, sym_arg_35 };
-  Local<Function> sym_fn_37 = FunctionTemplate::New(isolate, tco_fib)->GetFunction();
-  sym_fn_37->SetName(String::NewFromUtf8(isolate, "tco_fib"));
-  Local<Value> sym_arg_32 = sym_fn_37->Call(sym_fn_37, 3, sym_args_36);
+  Local<Value> sym_arg_29 = Number::New(isolate, 100);
+  Local<Value> sym_arg_30 = Number::New(isolate, 0);
+  Local<Value> sym_arg_31 = Number::New(isolate, 1);
+  Local<Value> sym_args_32[] = { sym_arg_29, sym_arg_30, sym_arg_31 };
+  Local<Function> sym_fn_33 = FunctionTemplate::New(isolate, tco_fib)->GetFunction();
+  sym_fn_33->SetName(String::NewFromUtf8(isolate, "tco_fib"));
+  Local<Value> sym_arg_28 = sym_fn_33->Call(sym_fn_33, 3, sym_args_32);
 
-  Local<Value> sym_args_38[] = { sym_arg_32 };
-  Local<Value> sym_parent_41 = isolate->GetCurrentContext()->Global()->Get(String::NewFromUtf8(isolate, "console"));
-  Local<Value> sym_anon_40 = sym_parent_41.As<Object>()->Get(String::NewFromUtf8(isolate, "log"));
-  Local<Function> sym_fn_39 = Local<Function>::Cast(sym_anon_40);
-  Local<Value> sym_anon_31 = sym_fn_39->Call(sym_fn_39, 1, sym_args_38);
+  Local<Value> sym_args_34[] = { sym_arg_28 };
+  Local<Value> sym_parent_37 = isolate->GetCurrentContext()->Global()->Get(String::NewFromUtf8(isolate, "console"));
+  Local<Value> sym_anon_36 = sym_parent_37.As<Object>()->Get(String::NewFromUtf8(isolate, "log"));
+  Local<Function> sym_fn_35 = Local<Function>::Cast(sym_anon_36);
+  Local<Value> sym_anon_27 = sym_fn_35->Call(sym_fn_35, 1, sym_args_34);
+
+  return;
 }
 
-// postfix omitted
+void Init(Local<Object> exports) {
+  NODE_SET_METHOD(exports, "jsc_main", jsc_main);
+}
+
+NODE_MODULE(NODE_GYP_MODULE_NAME, Init)
 ```
 
 By running `./build.sh examples/recursion.js`.
