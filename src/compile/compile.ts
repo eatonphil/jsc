@@ -8,7 +8,7 @@ import * as format from './formatters';
 import { Local, Locals } from './locals';
 import { Type } from './type';
 
-let tailRecurseCounter = 0;
+let labelCounter = 0;
 
 interface Context {
   buffer: string[];
@@ -67,7 +67,7 @@ function compileFunctionDeclaration(
   const mangled = name === 'main' ? 'jsc_main' : mangle(context.moduleName, name);
 
   const safe = context.locals.register(name);
-  const tcoLabel = `tail_recurse_${tailRecurseCounter++}`;
+  const tcoLabel = `tail_recurse_${labelCounter++}`;
 
   context.emit(`void ${mangled}(const FunctionCallbackInfo<Value>& _args) {`);
   context.emitStatement('Isolate* isolate = _args.GetIsolate()', context.depth + 1);
@@ -94,7 +94,9 @@ function compileFunctionDeclaration(
     compileBlock(childContext, fd.body);
   }
 
-  context.emit('}\n', 0);
+  // Needed for labels at end of body
+  context.emitStatement('return', context.depth + 1);
+  context.emit('}\n');
 }
 
 function compileCall(
@@ -220,17 +222,11 @@ function compileIf(
 ) {
   context.emit('', 0);
 
-  const tmp = context.locals.symbol();
-  compileNode(context, tmp, exp);
+  const test = context.locals.symbol();
+  compileNode(context, test, exp);
 
-  const args = context.locals.symbol();
-  context.emitStatement(`Local<Value> ${args.name}[] = { ${tmp.name} }`);
-
-  // TODO: Can skip the ->BooleanValue() call if we see tmp is a Boolean type.
-  const tmp2 = context.locals.symbol();
-  context.emitStatement(`Maybe<bool> ${tmp2.name} = ${tmp.name}->BooleanValue(isolate->GetCurrentContext())`);
-
-  context.emit(`if (${tmp2.name}.IsJust() && ${tmp2.name}.FromJust()) {`);
+  // TODO: Can skip the toBoolean call if we see tmp is a Boolean type
+  context.emit(`if (toBoolean(${test.name}) {`);
   const c = { ...context, depth: context.depth + 1 };
   compileNode(c, context.locals.symbol(), thenStmt);
 
@@ -240,6 +236,30 @@ function compileIf(
   }
 
   context.emit('}\n');
+}
+
+function compilePostfixUnaryExpression(
+  context: Context,
+  destination: Local,
+  pue: ts.PostfixUnaryExpression,
+) {
+  const lhs = context.locals.symbol('lhs');
+  compileNode(context, lhs, pue.operand);
+
+  // f++ previous value of f is returned
+  context.emitAssign(destination, lhs.name);
+
+  switch (pue.operator) {
+    case ts.SyntaxKind.PlusPlusToken:
+      context.emitAssign(lhs, format.v8Number(`toNumber(${lhs.name}) + 1`));
+      break;
+    case ts.SyntaxKind.MinusMinusToken:
+      context.emitAssign(lhs, format.v8Number(`toNumber(${lhs.name}) - 1`));
+      break;
+    default:
+      throw new Error('Unsupported operator: ' + ts.SyntaxKind[pue.operator]);
+      break;
+  }
 }
 
 function compileBinaryExpression(
@@ -257,6 +277,21 @@ function compileBinaryExpression(
   let value;
 
   switch (be.operatorToken.kind) {
+    case ts.SyntaxKind.EqualsToken:
+      context.emitAssign(lhs, rhs.name);
+      return;
+    case ts.SyntaxKind.LessThanToken:
+      bool = `toNumber(${lhs.name}) < toNumber(${rhs.name})`;
+      break;
+    case ts.SyntaxKind.GreaterThanToken:
+      bool = `toNumber(${lhs.name}) > toNumber(${rhs.name})`;
+      break;
+    case ts.SyntaxKind.LessThanEqualsToken:
+      bool = `toNumber(${lhs.name}) <= toNumber(${rhs.name})`;
+      break;
+    case ts.SyntaxKind.GreaterThanEqualsToken:
+      bool = `toNumber(${lhs.name}) >= toNumber(${rhs.name})`;
+      break;
     case ts.SyntaxKind.ExclamationEqualsToken:
       bool = `!${lhs.name}->Equals(${rhs.name})`;
       break;
@@ -276,7 +311,7 @@ function compileBinaryExpression(
       value = `genericMinus(isolate, ${lhs.name}, ${rhs.name})`;
       break;
     default:
-      throw new Error('Unsupported expression: ' + ts.SyntaxKind[be.operatorToken.kind]);
+      throw new Error('Unsupported operator: ' + ts.SyntaxKind[be.operatorToken.kind]);
       break;
   }
 
@@ -307,6 +342,67 @@ function compileVariable(
   }
 }
 
+function compileDo(
+  context: Context,
+  {
+    statement: body,
+    expression: test,
+  }: ts.DoStatement,
+) {
+  context.emit('do {');
+
+  const bodyContext = { ...context, depth: context.depth + 1 };
+  compileNode(bodyContext, context.locals.symbol(), body);
+
+  const tmp = context.locals.symbol('test');
+  compileNode(bodyContext, tmp, test);
+
+  context.emitStatement(`} while (${tmp.name})`);
+}
+
+function compileFor(
+  context: Context,
+  {
+    initializer,
+    condition,
+    incrementor,
+    statement: body,
+  }: ts.ForStatement,
+) {
+  const init = context.locals.symbol('init');
+  if (initializer) {
+    compileNode(context, init, initializer);
+  }
+
+  const cond = context.locals.symbol('cond');
+  if (condition) {
+    compileNode(context, cond, condition);
+  }
+
+  const label = `done_while_${labelCounter++}`;
+  context.emit(`while (true) {`);
+
+  const childContext = { ...context, depth: context.depth + 1 };
+  const tmp = context.locals.symbol('body');
+  compileNode(childContext, tmp, body);
+
+  if (incrementor) {
+    compileNode(childContext, context.locals.symbol('inc'), incrementor);
+  }
+
+  if (condition) {
+    compileNode(childContext, cond, condition);
+    childContext.emit('', 0);
+    childContext.emitStatement(`if (!toBoolean(${cond.name})) goto ${label}`);
+  }
+
+  context.emit('}');
+
+  if (condition) {
+    context.emit(`${label}:`, 0);
+  }
+}
+
 function compileNode(
   context: Context,
   destination: Local,
@@ -325,7 +421,12 @@ function compileNode(
     }
     case ts.SyntaxKind.VariableStatement: {
       const vs = node as ts.VariableStatement;
-      vs.declarationList.declarations.forEach(function (d) {
+      compileNode(context, destination, vs.declarationList);
+      break;
+    }
+    case ts.SyntaxKind.VariableDeclarationList: {
+      const dl = node as ts.VariableDeclarationList;
+      dl.declarations.forEach(function (d) {
 	compileVariable(context, context.locals.symbol(), d);
       });
       break;
@@ -367,6 +468,16 @@ function compileNode(
       break;
     }
 
+    case ts.SyntaxKind.DoStatement: {
+      const ds = node as ts.DoStatement;
+      compileDo(context, ds);
+      break;
+    }
+    case ts.SyntaxKind.ForStatement: {
+      const fs = node as ts.ForStatement;
+      compileFor(context, fs);
+      break;
+    }
     case ts.SyntaxKind.ReturnStatement: {
       const rs = node as ts.ReturnStatement;
       compileReturn(context, rs.expression);
@@ -386,6 +497,10 @@ function compileNode(
       const be = node as ts.BinaryExpression;
       compileBinaryExpression(context, destination, be);
       break;
+    }
+    case ts.SyntaxKind.PostfixUnaryExpression: {
+      const pue = node as ts.PostfixUnaryExpression;
+      compilePostfixUnaryExpression(context, destination, pue);
     }
     case ts.SyntaxKind.EndOfFileToken:
       break;
@@ -408,11 +523,11 @@ export function compileSource(
 }
 
 function emitPrefix(buffer: string[]) {
-  emit.emit(buffer, 0, readFileSync(path.join(__dirname, 'lib.cc')).toString());
+  emit.emit(buffer, 0, `#include "lib.cc"\n`);
 }
 
 function emitPostfix(buffer: string[]) {
-    emit.emit(buffer, 0, `void Init(Local<Object> exports) {
+  emit.emit(buffer, 0, `void Init(Local<Object> exports) {
   NODE_SET_METHOD(exports, "jsc_main", jsc_main);
 }
 

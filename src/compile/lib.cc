@@ -31,6 +31,18 @@ inline double toNumber(Local<Value> n) {
   return 0;
 }
 
+inline bool toBoolean(Local<Value> n) {
+  if (n->IsNumber()) {
+    return Local<Number>::Cast(n)->Value() != 0;
+  } else if (n->IsBoolean()) {
+    return Local<Boolean>::Cast(n)->IsTrue();
+  } else if (n->IsString()) {
+    return Local<String>::Cast(n)->Length() != 0;
+  }
+
+  return true;
+}
+
 inline Local<String> toString(Isolate* isolate, Local<Value> s) {
   std::string cpps = "";
 

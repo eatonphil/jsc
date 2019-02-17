@@ -11,6 +11,7 @@ export function build(buildDirectory: string, program: string) {
     fs.mkdirSync(buildDirectory);
   } catch (e) {}
 
+  fs.writeFileSync(path.join(buildDirectory, 'lib.cc'), fs.readFileSync(path.join(__dirname, 'compile/lib.cc')));
   fs.writeFileSync(path.join(buildDirectory, 'jsc.cc'), program);
   fs.writeFileSync(path.join(buildDirectory, 'binding.gyp'), JSON.stringify({
     targets: [
