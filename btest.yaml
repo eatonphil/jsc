@@ -7,6 +7,7 @@ runners:
       - yarn init --yes
       - yarn add ts-node typescript rimraf node-gyp @types/node
     run: |
-      ls $DIRECTORY
-      yarn ts-node $DIRECTORY/src/main.ts test.js
+      ls $ROOT_DIRECTORY
+      pwd
+      yarn ts-node $ROOT_DIRECTORY/src/main.ts test.js
       node ./bin/index.js
