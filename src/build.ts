@@ -11,16 +11,19 @@ export function build(buildDirectory: string, program: string) {
     fs.mkdirSync(buildDirectory);
   } catch (e) {}
 
-  fs.writeFileSync(path.join(buildDirectory, 'lib.cc'), fs.readFileSync(path.join(buildDirectory, 'compile/lib.cc')));
-  fs.writeFileSync(path.join(buildDirectory, 'jsc.cc'), program);
-  fs.writeFileSync(path.join(buildDirectory, 'binding.gyp'), JSON.stringify({
-    targets: [
-      {
-	target_name: 'jsc',
-	sources: ['jsc.cc'],
-      },
-    ],
-  }));
+  fs.writeFileSync(path.join(buildDirectory, 'lib.cc'),
+		   fs.readFileSync(path.join(__dirname, '../../src/compile/lib.cc')));
+  fs.writeFileSync(path.join(buildDirectory, 'jsc.cc'),
+		   program);
+  fs.writeFileSync(path.join(buildDirectory, 'binding.gyp'),
+		   JSON.stringify({
+		     targets: [
+		       {
+			 target_name: 'jsc',
+			 sources: ['jsc.cc'],
+		       },
+		     ],
+		   }));
 
   // Build library
   cp.execSync('../node_modules/.bin/node-gyp configure', { cwd: buildDirectory });
