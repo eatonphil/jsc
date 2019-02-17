@@ -350,12 +350,23 @@ function compileNode(
       context.emitAssign(destination, format.v8String(sl.text));
       break;
     }
+    case ts.SyntaxKind.NullKeyword:
+      context.emitAssign(destination, "Null(isolate)");
+      break;
+    case ts.SyntaxKind.TrueKeyword:
+      context.emitAssign(destination, "True(isolate)");
+      break;
+    case ts.SyntaxKind.FalseKeyword:
+      context.emitAssign(destination, "False(isolate)");
+      break;
+
     case ts.SyntaxKind.FirstLiteralToken:
     case ts.SyntaxKind.NumericLiteral: {
       const nl = node as ts.NumericLiteral;
       context.emitAssign(destination, format.v8Number(nl.text));
       break;
     }
+
     case ts.SyntaxKind.ReturnStatement: {
       const rs = node as ts.ReturnStatement;
       compileReturn(context, rs.expression);
