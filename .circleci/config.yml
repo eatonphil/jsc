@@ -24,4 +24,4 @@ jobs:
           name: Install Node dependencies, run tests
           command: |
             npm install -g ts-node typescript rimraf node-gyp @types/node
-	    btest
+            btest
