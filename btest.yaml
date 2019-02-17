@@ -7,5 +7,5 @@ runners:
       - yarn init --yes
       - yarn add /root/project
     run: |
-      node ./node_modules/jsc/build/main test.js
+      node ./node_modules/jsc/build/main test.js &> /dev/null
       node ./bin/index.js
