@@ -7,5 +7,6 @@ runners:
       - yarn init --yes
       - yarn add /root/project
     run: |
+      yarn ts-node --version
       yarn ts-node ./node_modules/jsc/src/main.ts test.js
       node ./bin/index.js
