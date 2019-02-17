@@ -7,5 +7,5 @@ runners:
       - yarn init --yes
       - yarn add /root/project
     run: |
-      yarn ts-node -O '{"module": "commonjs"}' ./node_modules/jsc/src/main.ts test.js
+      node ./node_modules/jsc/build/main test.js
       node ./bin/index.js
