@@ -1,0 +1,2 @@
+* Prototype lookup
+* Dot assignment

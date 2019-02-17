@@ -58,6 +58,7 @@ export function boolean(local: Local) {
 }
 
 export function cast(targetLocal: Local, castingLocal: Local, assign?: boolean) {
+  console.log(targetLocal.type, castingLocal.type, castingLocal.name);
   if (targetLocal.type !== castingLocal.type && targetLocal.initialized) {
     const type = targetLocal.type === Type.V8String ? 'String' :
 		 targetLocal.type === Type.V8Number ? 'Number' :
@@ -69,9 +70,13 @@ export function cast(targetLocal: Local, castingLocal: Local, assign?: boolean) 
     if (assign) {
       targetLocal.type = castingLocal.type;
     }
-    return `${type}::Cast(${castingLocal.name})`;
+
+    console.log(targetLocal.type, castingLocal.type, castingLocal.name);
+
+    return `Local<${type}>::Cast(${castingLocal.name})`;
   } else if (assign) {
     targetLocal.type = castingLocal.type;
+    console.log(targetLocal.type, castingLocal.type, castingLocal.name);
     return castingLocal.name;
   }
 }
