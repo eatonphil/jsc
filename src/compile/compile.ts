@@ -172,6 +172,20 @@ function compilePropertyAccess(
   context.emitAssign(destination, `${exp.name}.As<Object>()->Get(${format.v8String(id)})`);
 }
 
+function compileElementAccess(
+  context: Context,
+  destination: Local,
+  eae: ts.ElementAccessExpression,
+) {
+  const exp = context.locals.symbol('parent');
+  compileNode(context, exp, eae.expression);
+
+  const arg = context.locals.symbol('arg');
+  compileNode(context, arg, eae.argumentExpression);
+
+  context.emitAssign(destination, `${exp.name}.As<Object>()->Get(${arg.name})`);
+}
+
 function compileIdentifier(
   context: Context,
   destination: Local,
@@ -304,6 +318,9 @@ function compileBinaryExpression(
     case ts.SyntaxKind.EqualsEqualsEqualsToken:
       bool = `${lhs.name}->StrictEquals(${rhs.name})`;
       break;
+    case ts.SyntaxKind.AmpersandAmpersandToken:
+      bool = `toBoolean(${lhs.name}) ? (toBoolean(${rhs.name}) ? ${rhs.name} : ${lhs.name}) : ${lhs.name}`;
+      break;
     case ts.SyntaxKind.PlusToken:
       value = `genericPlus(isolate, ${lhs.name}, ${rhs.name})`;
       break;
@@ -431,6 +448,15 @@ function compileNode(
       });
       break;
     }
+    case ts.SyntaxKind.BinaryExpression: {
+      const be = node as ts.BinaryExpression;
+      compileBinaryExpression(context, destination, be);
+      break;
+    }
+    case ts.SyntaxKind.PostfixUnaryExpression: {
+      const pue = node as ts.PostfixUnaryExpression;
+      compilePostfixUnaryExpression(context, destination, pue);
+    }
     case ts.SyntaxKind.CallExpression: {
       const ce = node as ts.CallExpression;
       compileCall(context, destination, ce);
@@ -439,6 +465,11 @@ function compileNode(
     case ts.SyntaxKind.PropertyAccessExpression: {
       const pae = node as ts.PropertyAccessExpression;
       compilePropertyAccess(context, destination, pae);
+      break;
+    }
+    case ts.SyntaxKind.ElementAccessExpression: {
+      const eae = node as ts.ElementAccessExpression;
+      compileElementAccess(context, destination, eae);
       break;
     }
     case ts.SyntaxKind.Identifier: {
@@ -492,15 +523,6 @@ function compileNode(
       const b = node as ts.Block;
       compileBlock(context, b);
       break;
-    }
-    case ts.SyntaxKind.BinaryExpression: {
-      const be = node as ts.BinaryExpression;
-      compileBinaryExpression(context, destination, be);
-      break;
-    }
-    case ts.SyntaxKind.PostfixUnaryExpression: {
-      const pue = node as ts.PostfixUnaryExpression;
-      compilePostfixUnaryExpression(context, destination, pue);
     }
     case ts.SyntaxKind.EndOfFileToken:
       break;
