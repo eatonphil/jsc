@@ -22,9 +22,9 @@ jobs:
             make
             make install
       - run:
-          name: Install jsc
+          name: Install Node dependencies
           command: |
-            npm install -g .
+            npm install -g ts-node typescript rimraf node-gyp @types/node
       - run:
           name: Run jsc tests
           command: btest
