@@ -240,7 +240,7 @@ function compileIf(
   compileNode(context, test, exp);
 
   // TODO: Can skip the toBoolean call if we see tmp is a Boolean type
-  context.emit(`if (toBoolean(${test.name}) {`);
+  context.emit(`if (toBoolean(${test.name})) {`);
   const c = { ...context, depth: context.depth + 1 };
   compileNode(c, context.locals.symbol(), thenStmt);
 
