@@ -4,5 +4,5 @@ parallelize_runners: true
 runners:
   - name: jsc
     setup:
-      - yarn ts-node src/main.ts test.js
+      - yarn init && yarn ts-node src/main.ts test.js
     run: node ./bin
