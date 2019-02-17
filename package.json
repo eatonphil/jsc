@@ -1,5 +1,6 @@
 {
   "name": "jsc",
+  "version": "0.0.1",
   "dependencies": {
     "@types/node": "^11.9.4",
     "node-gyp": "^3.8.0",
