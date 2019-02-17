@@ -30,6 +30,31 @@ function identifier(id: ts.Identifier): string {
   return id.escapedText as string;
 }
 
+function compileArrayLiteral(
+  context: Context,
+  destination: Local,
+  { elements }: ts.ArrayLiteralExpression,
+) {
+  let tmp;
+  if (!destination.initialized) {
+    tmp = destination;
+  } else {
+    tmp = context.locals.symbol();
+  }
+
+  tmp.type = Type.V8Array;
+  context.emitAssign(tmp, `Local<Array>::New(isolate, ${elements.length})`);
+  const init = context.locals.symbol('init');
+  elements.forEach(function (e, i) {
+    compileNode(context, init, e);
+    context.emitStatement(`${tmp}->Set(${i}, ${init.name})`);
+  });
+
+  if (tmp === destination) {
+    context.emitAssign(destination, tmp.name);
+  }
+}
+
 function compileBlock(
   context: Context,
   block: ts.Block,
@@ -201,6 +226,7 @@ function compileIdentifier(
       destination.name = mangled;
     } else {
       destination.name = local.name;
+      destination.type = local.type;
     }
 
     destination.initialized = true;
@@ -239,8 +265,7 @@ function compileIf(
   const test = context.locals.symbol();
   compileNode(context, test, exp);
 
-  // TODO: Can skip the toBoolean call if we see tmp is a Boolean type
-  context.emit(`if (toBoolean(${test.name})) {`);
+  context.emit(`if (${format.boolean(test)}) {`);
   const c = { ...context, depth: context.depth + 1 };
   compileNode(c, context.locals.symbol(), thenStmt);
 
@@ -258,17 +283,19 @@ function compilePostfixUnaryExpression(
   pue: ts.PostfixUnaryExpression,
 ) {
   const lhs = context.locals.symbol('lhs');
+  lhs.type = Type.V8Number;
   compileNode(context, lhs, pue.operand);
 
   // f++ previous value of f is returned
+  destination.type = Type.V8Number;
   context.emitAssign(destination, lhs.name);
 
   switch (pue.operator) {
     case ts.SyntaxKind.PlusPlusToken:
-      context.emitAssign(lhs, format.v8Number(`toNumber(${lhs.name}) + 1`));
+      context.emitAssign(lhs, format.v8Number(`${format.number(lhs)} + 1`));
       break;
     case ts.SyntaxKind.MinusMinusToken:
-      context.emitAssign(lhs, format.v8Number(`toNumber(${lhs.name}) - 1`));
+      context.emitAssign(lhs, format.v8Number(`${format.number(lhs)} - 1`));
       break;
     default:
       throw new Error('Unsupported operator: ' + ts.SyntaxKind[pue.operator]);
@@ -292,19 +319,20 @@ function compileBinaryExpression(
 
   switch (be.operatorToken.kind) {
     case ts.SyntaxKind.EqualsToken:
-      context.emitAssign(lhs, rhs.name);
+      context.emitAssign(lhs, format.cast(lhs, rhs, true));
+      context.emitAssign(destination, format.cast(destination, lhs, true));
       return;
     case ts.SyntaxKind.LessThanToken:
-      bool = `toNumber(${lhs.name}) < toNumber(${rhs.name})`;
+      bool = `${format.number(lhs)} < ${format.number(rhs)}`;
       break;
     case ts.SyntaxKind.GreaterThanToken:
-      bool = `toNumber(${lhs.name}) > toNumber(${rhs.name})`;
+      bool = `${format.number(lhs)} > ${format.number(rhs)}`;
       break;
     case ts.SyntaxKind.LessThanEqualsToken:
-      bool = `toNumber(${lhs.name}) <= toNumber(${rhs.name})`;
+      bool = `${format.number(lhs)} <= ${format.number(rhs)}`;
       break;
     case ts.SyntaxKind.GreaterThanEqualsToken:
-      bool = `toNumber(${lhs.name}) >= toNumber(${rhs.name})`;
+      bool = `${format.number(lhs)} >= ${format.number(rhs)}`;
       break;
     case ts.SyntaxKind.ExclamationEqualsToken:
       bool = `!${lhs.name}->Equals(${rhs.name})`;
@@ -319,10 +347,10 @@ function compileBinaryExpression(
       bool = `${lhs.name}->StrictEquals(${rhs.name})`;
       break;
     case ts.SyntaxKind.AmpersandAmpersandToken:
-      bool = `toBoolean(${lhs.name}) ? (toBoolean(${rhs.name}) ? ${rhs.name} : ${lhs.name}) : ${lhs.name}`;
+      bool = `${format.boolean(lhs)} ? (${format.boolean(rhs)} ? ${rhs.name} : ${lhs.name}) : ${lhs.name}`;
       break;
     case ts.SyntaxKind.PlusToken:
-      value = `genericPlus(isolate, ${lhs.name}, ${rhs.name})`;
+      value = format.plus(lhs, rhs);
       break;
     case ts.SyntaxKind.MinusToken:
       value = `genericMinus(isolate, ${lhs.name}, ${rhs.name})`;
@@ -332,11 +360,16 @@ function compileBinaryExpression(
       break;
   }
 
-  // TODO: add support for more operators
-
   if (bool) {
-    context.emitAssign(destination, `${bool} ? True(isolate) : False(isolate)`);
+    destination.type = Type.V8Boolean;
+    context.emitAssign(destination, format.v8Boolean(bool));
   } else if (value) {
+    if (lhs.type === Type.V8String || rhs.type === Type.V8String) {
+      destination.type = Type.V8String;
+    } else if (lhs.type === Type.V8Number && rhs.type === Type.V8Number) {
+      destination.type = Type.V8Number;
+    }
+
     context.emitAssign(destination, value);
   }
 }
@@ -387,7 +420,7 @@ function compileWhile(
   const test = context.locals.symbol();
   compileNode(context, test, exp);
 
-  context.emit(`while (toBoolean(${test.name})) {`);
+  context.emit(`while (${format.boolean(test)}) {`);
 
   const bodyContext = { ...context, depth: context.depth + 1 };
   compileNode(bodyContext, context.locals.symbol(), body);
@@ -431,7 +464,7 @@ function compileFor(
   if (condition) {
     compileNode(childContext, cond, condition);
     childContext.emit('', 0);
-    childContext.emitStatement(`if (!toBoolean(${cond.name})) goto ${label}`);
+    childContext.emitStatement(`if (!${format.boolean(cond)}) goto ${label}`);
   }
 
   context.emit('}');
@@ -498,8 +531,10 @@ function compileNode(
       compileIdentifier(context, destination, id);
       break;
     }
+
     case ts.SyntaxKind.StringLiteral: {
       const sl = node as ts.StringLiteral;
+      destination.type = Type.V8String;
       context.emitAssign(destination, format.v8String(sl.text));
       break;
     }
@@ -507,15 +542,24 @@ function compileNode(
       context.emitAssign(destination, "Null(isolate)");
       break;
     case ts.SyntaxKind.TrueKeyword:
-      context.emitAssign(destination, "True(isolate)");
+      destination.type = Type.V8Boolean;
+      context.emitAssign(destination, format.v8Boolean(true));
       break;
     case ts.SyntaxKind.FalseKeyword:
-      context.emitAssign(destination, "False(isolate)");
+      destination.type = Type.V8Boolean;
+      context.emitAssign(destination, format.v8Boolean(false));
       break;
+
+    case ts.SyntaxKind.ArrayLiteralExpression: {
+      const ale = node as ts.ArrayLiteralExpression;
+      compileArrayLiteral(context, destination, ale);
+      break;
+    }
 
     case ts.SyntaxKind.FirstLiteralToken:
     case ts.SyntaxKind.NumericLiteral: {
       const nl = node as ts.NumericLiteral;
+      destination.type = Type.V8Number;
       context.emitAssign(destination, format.v8Number(nl.text));
       break;
     }

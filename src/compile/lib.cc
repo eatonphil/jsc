@@ -60,11 +60,19 @@ inline Local<String> toString(Isolate* isolate, Local<Value> s) {
 inline Local<Value> genericPlus(Isolate* isolate, Local<Value> l, Local<Value> r) {
   if (l->IsString() || r->IsString()) {
     return String::Concat(toString(isolate, l), toString(isolate, r));
-  } else {
-    return Number::New(isolate, toNumber(l) + toNumber(r));
   }
+
+  return Number::New(isolate, toNumber(l) + toNumber(r));
 }
 
-inline Local<Value> genericMinus(Isolate* isolate, Local<Value> l, Local<Value> r) {
+inline Local<Number> genericMinus(Isolate* isolate, Local<Value> l, Local<Value> r) {
   return Number::New(isolate, toNumber(l) - toNumber(r));
+}
+
+inline Local<Number> numberPlus(Isolate* isolate, Local<Number> l, Local<Number> r) {
+  return Number::New(isolate, toNumber(l) + toNumber(r));
+}
+
+inline Local<String> stringPlus(Isolate* isolate, Local<String> l, Local<String> r) {
+  return String::Concat(toString(isolate, l), toString(isolate, r));
 }

@@ -21,8 +21,9 @@ $ node bin/tco.js
 
 * Functions and function calls
   * Basic tail-call optimization
-* Var declarations
-* Few primitive operations
+* Var, const, let declarations
+* For, do, while statements
+* Basic primitive operations
 * Number, string, boolean and null literals
 
 #### Not (yet) supported
@@ -64,21 +65,21 @@ void tco_fib(const FunctionCallbackInfo<Value>& _args) {
   for (int i = 0; i < _args.Length(); i++) args[i] = _args[i];
 tail_recurse_0:
 
-  Local<Value> sym_rhs_4 = Number::New(isolate, 0);
-  Local<Value> sym_anon_2 = args[0]->StrictEquals(sym_rhs_4) ? True(isolate) : False(isolate);
-  if (toBoolean(sym_anon_2)) {
+  Local<Number> sym_rhs_4 = Number::New(isolate, 0);
+  Local<Boolean> sym_anon_2 = args[0]->StrictEquals(sym_rhs_4) ? True(isolate) : False(isolate);
+  if (sym_anon_2->IsTrue()) {
     _args.GetReturnValue().Set(args[1]);
     return;
   }
 
-  Local<Value> sym_rhs_11 = Number::New(isolate, 1);
-  Local<Value> sym_anon_9 = args[0]->StrictEquals(sym_rhs_11) ? True(isolate) : False(isolate);
-  if (toBoolean(sym_anon_9)) {
+  Local<Number> sym_rhs_11 = Number::New(isolate, 1);
+  Local<Boolean> sym_anon_9 = args[0]->StrictEquals(sym_rhs_11) ? True(isolate) : False(isolate);
+  if (sym_anon_9->IsTrue()) {
     _args.GetReturnValue().Set(args[2]);
     return;
   }
 
-  Local<Value> sym_rhs_19 = Number::New(isolate, 1);
+  Local<Number> sym_rhs_19 = Number::New(isolate, 1);
   Local<Value> sym_arg_17 = genericMinus(isolate, args[0], sym_rhs_19);
   Local<Value> sym_arg_21 = genericPlus(isolate, args[1], args[2]);
   args[0] = sym_arg_17;
@@ -95,9 +96,9 @@ void jsc_main(const FunctionCallbackInfo<Value>& _args) {
   for (int i = 0; i < _args.Length(); i++) args[i] = _args[i];
 tail_recurse_1:
 
-  Local<Value> sym_arg_29 = Number::New(isolate, 100);
-  Local<Value> sym_arg_30 = Number::New(isolate, 0);
-  Local<Value> sym_arg_31 = Number::New(isolate, 1);
+  Local<Number> sym_arg_29 = Number::New(isolate, 100);
+  Local<Number> sym_arg_30 = Number::New(isolate, 0);
+  Local<Number> sym_arg_31 = Number::New(isolate, 1);
   Local<Value> sym_args_32[] = { sym_arg_29, sym_arg_30, sym_arg_31 };
   Local<Function> sym_fn_33 = FunctionTemplate::New(isolate, tco_fib)->GetFunction();
   sym_fn_33->SetName(String::NewFromUtf8(isolate, "tco_fib"));
