@@ -377,6 +377,27 @@ function compileDo(
   context.emitStatement(`} while (${tmp.name})`);
 }
 
+function compileWhile(
+  context: Context,
+  {
+    statement: body,
+    expression: exp,
+  }: ts.WhileStatement,
+) {
+  const test = context.locals.symbol();
+  compileNode(context, test, exp);
+
+  context.emit(`while (toBoolean(${test.name})) {`);
+
+  const bodyContext = { ...context, depth: context.depth + 1 };
+  compileNode(bodyContext, context.locals.symbol(), body);
+
+  compileNode(bodyContext, test, exp);
+
+  contex.emit('}');
+}
+
+
 function compileFor(
   context: Context,
   {
@@ -504,11 +525,17 @@ function compileNode(
       compileDo(context, ds);
       break;
     }
+    case ts.SyntaxKind.WhileStatement: {
+      const ws = node as ts.WhileStatement;
+      compileWhile(context, ds);
+      break;
+    }
     case ts.SyntaxKind.ForStatement: {
       const fs = node as ts.ForStatement;
       compileFor(context, fs);
       break;
     }
+
     case ts.SyntaxKind.ReturnStatement: {
       const rs = node as ts.ReturnStatement;
       compileReturn(context, rs.expression);
