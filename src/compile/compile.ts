@@ -394,7 +394,7 @@ function compileWhile(
 
   compileNode(bodyContext, test, exp);
 
-  contex.emit('}');
+  context.emit('}');
 }
 
 
@@ -527,7 +527,7 @@ function compileNode(
     }
     case ts.SyntaxKind.WhileStatement: {
       const ws = node as ts.WhileStatement;
-      compileWhile(context, ds);
+      compileWhile(context, ws);
       break;
     }
     case ts.SyntaxKind.ForStatement: {
