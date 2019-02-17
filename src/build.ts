@@ -12,7 +12,7 @@ export function build(buildDirectory: string, program: string) {
   } catch (e) {}
 
   fs.writeFileSync(path.join(buildDirectory, 'lib.cc'),
-		   fs.readFileSync(path.join(__dirname, '../../src/compile/lib.cc')));
+		   fs.readFileSync(path.join(__dirname, '../src/compile/lib.cc')));
   fs.writeFileSync(path.join(buildDirectory, 'jsc.cc'),
 		   program);
   fs.writeFileSync(path.join(buildDirectory, 'binding.gyp'),
