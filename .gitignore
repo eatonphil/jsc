@@ -1,3 +1,4 @@
+bin
 build
-/target/
-**/*.rs.bk
+node_modules
+*~

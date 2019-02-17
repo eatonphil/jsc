@@ -9,10 +9,12 @@ jobs:
           name: Install debian-packaged dependencies
           command: |
             apt update
-            apt install -y git build-essential rustc cargo curl build-essential
-            curl -sL https://deb.nodesource.com/setup_8.x | bash -
-            apt install -y nodejs
-            npm install -g node-gyp
+            apt install -y git build-essential curl build-essential
+            curl -sL https://deb.nodesource.com/setup_11.x | bash -
+            apt update && apt install -y nodejs
+            curl -sS https://dl.yarnpkg.com/debian/pubkey.gpg | apt-key add -
+            echo "deb https://dl.yarnpkg.com/debian/ stable main" | tee /etc/apt/sources.list.d/yarn.list
+            apt update && apt install -y yarn
             ln -s $(which ldc2) /usr/local/bin/ldc
       - run:
           name: Install btest
@@ -22,10 +24,7 @@ jobs:
             make
             make install
       - run:
-          name: Install jsc
+          name: Install Node dependencies, run tests
           command: |
-            make
-            make install
-      - run:
-          name: Run jsc tests
-          command: btest
+            yarn
+            yarn test
