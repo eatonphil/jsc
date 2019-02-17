@@ -353,6 +353,8 @@ function compileBinaryExpression(
       value = format.plus(lhs, rhs);
       break;
     case ts.SyntaxKind.MinusToken:
+      lhs.type = Type.V8Number;
+      rhs.type = Type.V8Number;
       value = `genericMinus(isolate, ${lhs.name}, ${rhs.name})`;
       break;
     default:
