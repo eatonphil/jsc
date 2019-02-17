@@ -1,11 +1,7 @@
 function displayCharacter(c) {
-    console.log('The character is: ' + c);
+  console.log(c);
 }
 
 function main() {
-    var a = Array.from('');
-    a.push(1);
-    a.push(42);
-    a.map(displayCharacter);
-    console.log(a);
+  Array.from('123').map(displayCharacter);
 }

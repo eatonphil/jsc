@@ -174,22 +174,30 @@ function compileIf(
   context: Context,
   exp: ts.Expression,
   thenStmt: ts.Statement,
-  elseStmt: ts.Statement,
+  elseStmt?: ts.Statement,
 ) {
+  context.emit('', 0);
+
   const tmp = context.locals.symbol();
   compileNode(context, tmp, exp);
 
   const args = context.locals.symbol();
   context.emitStatement(`Local<Value> ${args.name}[] = { ${tmp.name} }`);
-  context.emitAssign(tmp, `Local<Function>::Cast(isolate->GetCurrentLocals()\
-  ->Global()->Get(${format.v8String('Boolean')}))->Call(Null(isolate), 1, ${args.name})`);
+
+  const tmp2 = context.locals.symbol();
+  context.emitAssign(tmp2, `isolate->GetCurrentContext()->Global()->Get(${format.v8String('Boolean')})`);
+  context.emitAssign(tmp, `Local<Function>::Cast(${tmp2.name})->Call(Null(isolate), 1, ${args.name})`);
 
   context.emit(`if (Local<Boolean>::Cast(${tmp.name})->IsTrue()) {`);
   const c = { ...context, depth: context.depth + 1 };
   compileNode(c, tmp, thenStmt);
-  context.emit('} else {');
-  compileNode(c, tmp, elseStmt);
-  context.emit('}');
+
+  if (elseStmt) {
+    context.emit('} else {');
+    compileNode(c, tmp, elseStmt);
+  }
+
+  context.emit('}\n');
 }
 
 function compileBinaryExpression(
@@ -222,15 +230,38 @@ function compileBinaryExpression(
     case ts.SyntaxKind.PlusToken:
       value = `genericPlus(isolate, ${lhs.name}, ${rhs.name})`;
       break;
+    case ts.SyntaxKind.MinusToken:
+      value = `genericMinus(isolate, ${lhs.name}, ${rhs.name})`;
+      break;
     default:
       throw new Error('Unsupported expression: ' + ts.SyntaxKind[be.operatorToken.kind]);
       break;
   }
 
+  // TODO: add support for more operators
+
   if (bool) {
     context.emitAssign(destination, `${bool} ? True(isolate) : False(isolate)`);
   } else if (value) {
     context.emitAssign(destination, value);
+  }
+}
+
+function compileVariable(
+  context: Context,
+  destination: Local,
+  vd: ts.VariableDeclaration,
+) {
+  if (vd.name.kind === ts.SyntaxKind.ObjectBindingPattern ||
+      vd.name.kind === ts.SyntaxKind.ArrayBindingPattern) {
+    throw new Error('Variable destructuring not supported');
+  }
+
+  const id = identifier(vd.name);
+  const safe = context.locals.register(mangle(context.moduleName, id));
+
+  if (vd.initializer) {
+    compileNode(context, safe, vd.initializer);
   }
 }
 
@@ -248,6 +279,13 @@ function compileNode(
     case ts.SyntaxKind.ExpressionStatement: {
       const es = node as ts.ExpressionStatement;
       compileNode(context, destination, es.expression);
+      break;
+    }
+    case ts.SyntaxKind.VariableStatement: {
+      const vs = node as ts.VariableStatement;
+      vs.declarationList.declarations.forEach(function (d) {
+	compileVariable(context, context.locals.symbol(), d);
+      });
       break;
     }
     case ts.SyntaxKind.CallExpression: {
@@ -358,5 +396,7 @@ export function compile(program: ts.Program) {
   });
 
   emitPostfix(buffer);
-  return buffer.join('\n').replace('\n\n}', '\n}');
+  return buffer.join('\n') // Format nicely
+	       .replace(/\n\n+/g, '\n\n') // No more than two consecutive newlines
+	       .replace('\n\n}', '\n}'); // Now more than one newline before an ending brace
 }

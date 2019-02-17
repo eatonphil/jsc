@@ -27,8 +27,6 @@ inline double toNumber(Local<Value> n) {
     return Local<Boolean>::Cast(n)->IsTrue() ? 1 : 0;
   }
 
-  // TODO: strings return NaN? behavior unclear, this is not parseInt
-
   return 0;
 }
 
@@ -43,8 +41,6 @@ inline Local<String> toString(Isolate* isolate, Local<Value> s) {
     return Local<String>::Cast(s);
   }
 
-  // TODO: handle other types
-
   return String::NewFromUtf8(isolate, cpps.c_str());
 }
 
@@ -54,4 +50,8 @@ inline Local<Value> genericPlus(Isolate* isolate, Local<Value> l, Local<Value> r
   } else {
     return Number::New(isolate, toNumber(l) + toNumber(r));
   }
+}
+
+inline Local<Value> genericMinus(Isolate* isolate, Local<Value> l, Local<Value> r) {
+  return Number::New(isolate, toNumber(l) - toNumber(r));
 }
