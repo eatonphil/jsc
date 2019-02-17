@@ -9,8 +9,8 @@ jobs:
           name: Install debian-packaged dependencies
           command: |
             apt update
-            apt install -y git build-essential rustc cargo curl build-essential
-            curl -sL https://deb.nodesource.com/setup_8.x | bash -
+            apt install -y git build-essential curl build-essential
+            curl -sL https://deb.nodesource.com/setup_10.x | bash -
             apt install -y nodejs
             npm install -g node-gyp
             ln -s $(which ldc2) /usr/local/bin/ldc
@@ -24,8 +24,7 @@ jobs:
       - run:
           name: Install jsc
           command: |
-            make
-            make install
+            yarn
       - run:
           name: Run jsc tests
           command: btest
