@@ -4,5 +4,5 @@ parallelize_runners: true
 runners:
   - name: jsc
     setup:
-      - npm run ts-node src/main.ts test.js
+      - ts-node src/main.ts test.js
     run: node ./build/test.js

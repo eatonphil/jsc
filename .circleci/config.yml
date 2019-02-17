@@ -24,7 +24,7 @@ jobs:
       - run:
           name: Install jsc
           command: |
-            npm install
+            npm install -g
       - run:
           name: Run jsc tests
           command: btest
