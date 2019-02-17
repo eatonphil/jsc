@@ -6,5 +6,6 @@ runners:
     setup:
       - yarn init --yes
       - yarn add ts-node typescript rimraf node-gyp @types/node
-      - yarn ts-node $(realpath $CIRCLE_WORKING_DIRECTORY/src/main.ts) test.js
-    run: ls && node ./bin/index.js
+    run: |
+      yarn ts-node $(realpath $CIRCLE_WORKING_DIRECTORY/src/main.ts) test.js
+      node ./bin/index.js
