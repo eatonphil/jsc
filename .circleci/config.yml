@@ -27,7 +27,5 @@ jobs:
           name: Install Node dependencies, run tests
           command: |
             yarn global add ts-node typescript rimraf node-gyp @types/node
-            echo "export ROOT_DIRECTORY=$(pwd)" > /etc/profile
-            cat /etc/profile
             btest
             find example -name "*.js" -exec yarn ts-node src/main.ts {} \;
