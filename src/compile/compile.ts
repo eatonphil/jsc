@@ -8,15 +8,18 @@ import * as format from './formatters';
 import { Local, Locals } from './locals';
 import { Type } from './type';
 
+let tailRecurseCounter = 0;
+
 interface Context {
   buffer: string[];
   depth: number;
-  tc: ts.TypeChecker,
+  emit: (s: string, d?: number) => void;
+  emitAssign: (l: Local, s: string, d?: number) => void;
+  emitStatement: (s: string, d?: number) => void;
   locals: Locals;
   moduleName: string;
-  emit: (s: string, d?: number) => void;
-  emitStatement: (s: string, d?: number) => void;
-  emitAssign: (l: Local, s: string, d?: number) => void;
+  tc: ts.TypeChecker;
+  tco: { [name: string]: string };
 }
 
 function mangle(moduleName: string, local: string) {
@@ -32,7 +35,10 @@ function compileBlock(
   block: ts.Block,
 ) {
   block.statements.forEach(function (statement, i) {
-    compileNode(context, context.locals.symbol(), statement);
+    compileNode({
+      ...context,
+      tco: i < block.statements.length - 1 ? {} : context.tco,
+    }, context.locals.symbol(), statement);
   });
 }
 
@@ -49,7 +55,8 @@ function compileParameter(
 
   const id = identifier(p.name);
   const safe = context.locals.register(mangle(context.moduleName, id));
-  context.emitAssign(safe, `args[${n}]`);
+  safe.name = `args[${n}]`;
+  safe.initialized = true;
 }
 
 function compileFunctionDeclaration(
@@ -59,30 +66,32 @@ function compileFunctionDeclaration(
   const name = fd.name ? identifier(fd.name) : 'lambda';
   const mangled = name === 'main' ? 'jsc_main' : mangle(context.moduleName, name);
 
-  // Anonymous function declarations don't get added to locals.
-  if (fd.name) {
-    context.locals.register(name);
-  }
+  const safe = context.locals.register(name);
+  const tcoLabel = `tail_recurse_${tailRecurseCounter++}`;
 
-  context.emit(`void ${mangled}(const FunctionCallbackInfo<Value>& args) {`);
-  context.emitStatement(`Isolate* isolate = args.GetIsolate()`, context.depth + 1);
+  context.emit(`void ${mangled}(const FunctionCallbackInfo<Value>& _args) {`);
+  context.emitStatement('Isolate* isolate = _args.GetIsolate()', context.depth + 1);
+  context.emitStatement('std::vector<Local<Value>> args(_args.Length());', context.depth + 1);
+  context.emitStatement('for (int i = 0; i < _args.Length(); i++) args[i] = _args[i]', context.depth + 1);
+  context.emit(`${tcoLabel}:\n`, context.depth);
 
-  const c = {
+  const childContext = {
     ...context,
     depth: context.depth + 1,
+    // Body, parameters get new context
+    locals: context.locals.clone(),
+    // Copying might not allow for mutually tail-recursive functions?
+    tco: { ...context.tco, [safe.name]: tcoLabel },
   };
 
   if (fd.parameters) {
     fd.parameters.forEach(function (p, i) {
-      compileParameter(c, p, i, i === fd.parameters.length - 1);
+      compileParameter(childContext, p, i, i === fd.parameters.length - 1);
     });
   }
 
-  context.emit('', 0);
-
-  c.locals = c.locals.clone();
   if (fd.body) {
-    compileBlock(c, fd.body);
+    compileBlock(childContext, fd.body);
   }
 
   context.emit('}\n', 0);
@@ -93,6 +102,16 @@ function compileCall(
   destination: Local,
   ce: ts.CallExpression,
 ) {
+  let tcoLabel;
+  if (ce.expression.kind === ts.SyntaxKind.Identifier) {
+    const id = identifier(ce.expression as ts.Identifier);
+    const safe = context.locals.get(id);
+
+    if (safe) {
+      tcoLabel = context.tco[safe.name];
+    }
+  }
+
   const args = ce.arguments.map(function (argument) {
     const arg = context.locals.symbol('arg');
     compileNode(context, arg, argument);
@@ -100,7 +119,7 @@ function compileCall(
   });
 
   const argArray = context.locals.symbol('args');
-  if (args.length) {
+  if (!tcoLabel && args.length) {
     context.emitStatement(`Local<Value> ${argArray.name}[] = { ${args.join(', ')} }`);
   }
 
@@ -108,7 +127,19 @@ function compileCall(
   let literal = false;
   if (ce.expression.kind === ts.SyntaxKind.Identifier) {
     const id = identifier(ce.expression as ts.Identifier);
-    if (context.locals.get(id)) {
+    const safe = context.locals.get(id);
+
+    if (safe) {
+      if (tcoLabel) {
+	args.forEach(function (arg, i) {
+	  context.emitStatement(`args[${i}] = ${arg}`);
+	});
+
+	context.emitStatement(`goto ${tcoLabel}`);
+	context.emit('', 0);
+	return;
+      }
+
       literal = true;
       const mangled = mangle(context.moduleName, id);
       context.emitAssign(fn, `FunctionTemplate::New(isolate, ${mangled})->GetFunction()`);
@@ -148,8 +179,15 @@ function compileIdentifier(
 
   let val = identifier(id);
   const mangled = mangle(context.moduleName, val);
-  if (context.locals.get(mangled)) {
-    destination.name = mangled;
+  const local = context.locals.get(mangled);
+  if (local) {
+    if (!local.initialized) {
+      destination.name = mangled;
+    } else {
+      destination.name = local.name;
+    }
+
+    destination.initialized = true;
     return;
   } else if (val === 'global') {
     val = global;
@@ -166,8 +204,12 @@ function compileReturn(
 ) {
   const tmp = context.locals.symbol();
   compileNode(context, tmp, exp);
-  context.emitStatement(`args.GetReturnValue().Set(${tmp.name})`);
-  context.emitStatement('return');
+
+  // Should only be uninitialized if this was tail-call optimized
+  if (tmp.initialized) {
+    context.emitStatement(`_args.GetReturnValue().Set(${tmp.name})`);
+    context.emitStatement('return');
+  }
 }
 
 function compileIf(
@@ -184,17 +226,17 @@ function compileIf(
   const args = context.locals.symbol();
   context.emitStatement(`Local<Value> ${args.name}[] = { ${tmp.name} }`);
 
+  // TODO: Can skip the ->BooleanValue() call if we see tmp is a Boolean type.
   const tmp2 = context.locals.symbol();
-  context.emitAssign(tmp2, `isolate->GetCurrentContext()->Global()->Get(${format.v8String('Boolean')})`);
-  context.emitAssign(tmp, `Local<Function>::Cast(${tmp2.name})->Call(Null(isolate), 1, ${args.name})`);
+  context.emitStatement(`Maybe<bool> ${tmp2.name} = ${tmp.name}->BooleanValue(isolate->GetCurrentContext())`);
 
-  context.emit(`if (Local<Boolean>::Cast(${tmp.name})->IsTrue()) {`);
+  context.emit(`if (${tmp2.name}.IsJust() && ${tmp2.name}.FromJust()) {`);
   const c = { ...context, depth: context.depth + 1 };
-  compileNode(c, tmp, thenStmt);
+  compileNode(c, context.locals.symbol(), thenStmt);
 
   if (elseStmt) {
     context.emit('} else {');
-    compileNode(c, tmp, elseStmt);
+    compileNode(c, context.locals.symbol(), elseStmt);
   }
 
   context.emit('}\n');
@@ -379,18 +421,19 @@ export function compile(program: ts.Program) {
     const context = {
       buffer,
       depth: 0,
-      tc,
-      locals: new Locals,
-      moduleName: '',
       emit(s: string, d?: number) {
 	emit.emit(this.buffer, d === undefined ? this.depth : d, s);
-      },
-      emitStatement(s: string, d?:number) {
-	emit.statement(this.buffer, d === undefined ? this.depth : d, s);
       },
       emitAssign(l: Local, s: string, d?:number) {
 	emit.assign(this.buffer, d === undefined ? this.depth : d, l, s);
       },
+      emitStatement(s: string, d?:number) {
+	emit.statement(this.buffer, d === undefined ? this.depth : d, s);
+      },
+      locals: new Locals,
+      moduleName: '',
+      tc,
+      tco: {},
     };
     compileSource(context, source);
   });
@@ -398,5 +441,5 @@ export function compile(program: ts.Program) {
   emitPostfix(buffer);
   return buffer.join('\n') // Format nicely
 	       .replace(/\n\n+/g, '\n\n') // No more than two consecutive newlines
-	       .replace('\n\n}', '\n}'); // Now more than one newline before an ending brace
+	       .replace(/\n\n+}/g, '\n}'); // Now more than one newline before an ending brace
 }

@@ -19,6 +19,7 @@ using v8::String;
 using v8::False;
 using v8::True;
 using v8::Value;
+using v8::Maybe;
 
 inline double toNumber(Local<Value> n) {
   if (n->IsNumber()) {
