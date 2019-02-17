@@ -1,4 +1,5 @@
 {
+  "name": "jsc",
   "dependencies": {
     "@types/node": "^11.9.4",
     "node-gyp": "^3.8.0",
