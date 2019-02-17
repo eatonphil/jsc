@@ -24,7 +24,7 @@ jobs:
       - run:
           name: Install jsc
           command: |
-            yarn
+            npm install
       - run:
           name: Run jsc tests
           command: btest
