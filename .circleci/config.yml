@@ -11,10 +11,10 @@ jobs:
             apt update
             apt install -y git build-essential curl build-essential
             curl -sL https://deb.nodesource.com/setup_10.x | bash -
-	    apt update && apt install -y nodejs
-	    curl -sS https://dl.yarnpkg.com/debian/pubkey.gpg | sudo apt-key add -
-	    echo "deb https://dl.yarnpkg.com/debian/ stable main" | sudo tee /etc/apt/sources.list.d/yarn.list
-	    apt update && apt install -y yarn
+            apt update && apt install -y nodejs
+            curl -sS https://dl.yarnpkg.com/debian/pubkey.gpg | sudo apt-key add -
+            echo "deb https://dl.yarnpkg.com/debian/ stable main" | sudo tee /etc/apt/sources.list.d/yarn.list
+            apt update && apt install -y yarn
             ln -s $(which ldc2) /usr/local/bin/ldc
       - run:
           name: Install btest
