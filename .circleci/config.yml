@@ -27,5 +27,5 @@ jobs:
           name: Install Node dependencies, run tests
           command: |
             yarn global add ts-node typescript rimraf node-gyp @types/node
-	    btest
+            btest
             find example -name "*.js" -exec yarn ts-node src/main.ts {} \;
