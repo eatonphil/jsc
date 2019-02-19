@@ -8,14 +8,13 @@ import * as format from './formatters';
 import { Local, Locals } from './locals';
 import { Type } from './type';
 
-let labelCounter = 0;
-
 interface Context {
   buffer: string[];
   depth: number;
   emit: (s: string, d?: number) => void;
   emitAssign: (l: Local, s: string, d?: number) => void;
   emitStatement: (s: string, d?: number) => void;
+  labelCounter: number;
   locals: Locals;
   moduleName: string;
   tc: ts.TypeChecker;
@@ -91,8 +90,8 @@ function compileFunctionDeclaration(
   const name = fd.name ? identifier(fd.name) : 'lambda';
   const mangled = name === 'main' ? 'jsc_main' : mangle(context.moduleName, name);
 
-  const safe = context.locals.register(name);
-  const tcoLabel = `tail_recurse_${labelCounter++}`;
+  const safe = context.locals.register(mangled);
+  const tcoLabel = `tail_recurse_${context.labelCounter++}`;
 
   context.emit(`void ${mangled}(const FunctionCallbackInfo<Value>& _args) {`);
   context.emitStatement('Isolate* isolate = _args.GetIsolate()', context.depth + 1);
@@ -132,7 +131,7 @@ function compileCall(
   let tcoLabel;
   if (ce.expression.kind === ts.SyntaxKind.Identifier) {
     const id = identifier(ce.expression as ts.Identifier);
-    const safe = context.locals.get(id);
+    const safe = context.locals.get(mangle(context.moduleName, id));
 
     if (safe) {
       tcoLabel = context.tco[safe.name];
@@ -154,7 +153,8 @@ function compileCall(
   let literal = false;
   if (ce.expression.kind === ts.SyntaxKind.Identifier) {
     const id = identifier(ce.expression as ts.Identifier);
-    const safe = context.locals.get(id);
+    const mangled = mangle(context.moduleName, id);
+    const safe = context.locals.get(mangled);
 
     if (safe) {
       if (tcoLabel) {
@@ -168,8 +168,7 @@ function compileCall(
       }
 
       literal = true;
-      const mangled = mangle(context.moduleName, id);
-      context.emitAssign(fn, `FunctionTemplate::New(isolate, ${mangled})->GetFunction()`);
+      context.emitAssign(fn, `FunctionTemplate::New(isolate, ${safe.name})->GetFunction()`);
       context.emitStatement(`${fn.name}->SetName(${format.v8String(mangled)})`);
     }
   }
@@ -452,7 +451,7 @@ function compileFor(
     compileNode(context, cond, condition);
   }
 
-  const label = `done_while_${labelCounter++}`;
+  const label = `done_while_${context.labelCounter++}`;
   context.emit(`while (true) {`);
 
   const childContext = { ...context, depth: context.depth + 1 };
@@ -474,6 +473,60 @@ function compileFor(
   if (condition) {
     context.emit(`${label}:`, 0);
   }
+}
+
+function compileImport(
+  context: Context,
+  id: ts.ImportDeclaration,
+) {
+  // TODO: validate import was exported
+
+  const t = id.importClause &&
+	    id.importClause.namedBindings &&
+	    id.importClause.namedBindings.kind === ts.SyntaxKind.NamedImports ?
+	    id.importClause.namedBindings :
+	    { elements: undefined };
+  if (t.elements) {
+    // Only root-relative import paths for now
+    const { text } = id.moduleSpecifier as ts.StringLiteral;
+    const fileName = path.resolve(text);
+
+    const source = ts.createSourceFile(
+      fileName,
+      readFileSync(fileName).toString(),
+      ts.ScriptTarget.ES2015,
+    );
+
+    const moduleContext = {
+      ...context,
+      depth: 0,
+      locals: new Locals,
+      moduleName: '',
+      tco: {},
+    };
+    compileSource(moduleContext, source);
+
+    t.elements.forEach(function (exportObject) {
+      if (exportObject.propertyName) {
+	throw new Error('Unsupported import style: import { <> as <> } from \'<>\';');
+      }
+
+      const exportName = identifier(exportObject.name);
+      // Put the name the module will reference into context
+      const local = context.locals.register(
+	mangle(context.moduleName, exportName));
+      // Grab the location it will have been registered in the other module
+      const real = moduleContext.locals.get(
+	mangle(moduleContext.moduleName, exportName));
+      // Set the local lookup value to the real lookup value
+      local.name = real.name;
+      local.initialized = true;
+    });
+
+    return;
+  }
+
+  throw new Error('Unsupported import style');
 }
 
 function compileNode(
@@ -597,6 +650,13 @@ function compileNode(
       compileBlock(context, b);
       break;
     }
+    case ts.SyntaxKind.ImportDeclaration: {
+      const id = node as ts.ImportDeclaration;
+      compileImport(context, id);
+    }
+    case ts.SyntaxKind.ExportDeclaration: {
+      // TODO: add export to exports list;
+    }
     case ts.SyntaxKind.EndOfFileToken:
       break;
     default:
@@ -651,6 +711,7 @@ export function compile(program: ts.Program) {
       emitStatement(s: string, d?:number) {
 	emit.statement(this.buffer, d === undefined ? this.depth : d, s);
       },
+      labelCounter: 0,
       locals: new Locals,
       moduleName: '',
       tc,
