@@ -24,6 +24,7 @@ $ node bin/tco.js
 * Var, const, let declarations
 * For, do, while statements
 * Basic primitive operations
+* Basic import support
 * Number, string, boolean and null literals
 
 #### Not (yet) supported
