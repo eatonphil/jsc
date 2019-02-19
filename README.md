@@ -11,9 +11,10 @@ $ yarn
 ### Example
 
 ```bash
-$ yarn ts-node src/main.ts examples/tco.js
-$ node bin/tco.js
-354224848179262000000
+$ yarn tsc
+$ node build/jsc.js tests/tco.js
+$ node bin/index.js
+12586269025
 
 ```
 
