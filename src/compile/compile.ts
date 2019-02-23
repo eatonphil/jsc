@@ -546,24 +546,36 @@ function compileNode(
     }
     case ts.SyntaxKind.VariableStatement: {
       const vs = node as ts.VariableStatement;
-      compileNode(context, destination, vs.declarationList);
+      compileNode({
+	...context,
+	tco: {},
+      }, destination, vs.declarationList);
       break;
     }
     case ts.SyntaxKind.VariableDeclarationList: {
       const dl = node as ts.VariableDeclarationList;
-      dl.declarations.forEach((d)=>{
-  compileVariable(context, context.locals.symbol(), d);
+      dl.declarations.forEach((d) => {
+	compileVariable({
+	  ...context,
+	  tco: {},
+	}, context.locals.symbol(), d);
       });
       break;
     }
     case ts.SyntaxKind.BinaryExpression: {
       const be = node as ts.BinaryExpression;
-      compileBinaryExpression(context, destination, be);
+      compileBinaryExpression({
+	...context,
+	tco: {},
+      }, destination, be);
       break;
     }
     case ts.SyntaxKind.PostfixUnaryExpression: {
       const pue = node as ts.PostfixUnaryExpression;
-      compilePostfixUnaryExpression(context, destination, pue);
+      compilePostfixUnaryExpression({
+	...context,
+	tco: {},
+      }, destination, pue);
       break;
     }
     case ts.SyntaxKind.CallExpression: {
@@ -573,17 +585,26 @@ function compileNode(
     }
     case ts.SyntaxKind.PropertyAccessExpression: {
       const pae = node as ts.PropertyAccessExpression;
-      compilePropertyAccess(context, destination, pae);
+      compilePropertyAccess({
+	...context,
+	tco: {},
+      }, destination, pae);
       break;
     }
     case ts.SyntaxKind.ElementAccessExpression: {
       const eae = node as ts.ElementAccessExpression;
-      compileElementAccess(context, destination, eae);
+      compileElementAccess({
+	...context,
+	tco: {},
+      }, destination, eae);
       break;
     }
     case ts.SyntaxKind.Identifier: {
       const id = node as ts.Identifier;
-      compileIdentifier(context, destination, id);
+      compileIdentifier({
+	...context,
+	tco: {},
+      }, destination, id);
       break;
     }
 
@@ -607,7 +628,10 @@ function compileNode(
 
     case ts.SyntaxKind.ArrayLiteralExpression: {
       const ale = node as ts.ArrayLiteralExpression;
-      compileArrayLiteral(context, destination, ale);
+      compileArrayLiteral({
+	...context,
+	tco: {},
+      }, destination, ale);
       break;
     }
 
@@ -621,17 +645,26 @@ function compileNode(
 
     case ts.SyntaxKind.DoStatement: {
       const ds = node as ts.DoStatement;
-      compileDo(context, ds);
+      compileDo({
+	...context,
+	tco: {},
+      }, ds);
       break;
     }
     case ts.SyntaxKind.WhileStatement: {
       const ws = node as ts.WhileStatement;
-      compileWhile(context, ws);
+      compileWhile({
+	...context,
+	tco: {},
+      }, ws);
       break;
     }
     case ts.SyntaxKind.ForStatement: {
       const fs = node as ts.ForStatement;
-      compileFor(context, fs);
+      compileFor({
+	...context,
+	tco: {},
+      }, fs);
       break;
     }
 
@@ -652,7 +685,10 @@ function compileNode(
     }
     case ts.SyntaxKind.ImportDeclaration: {
       const id = node as ts.ImportDeclaration;
-      compileImport(context, id);
+      compileImport({
+	...context,
+	tco: {},
+      }, id);
       break;
     }
     case ts.SyntaxKind.ExportDeclaration: {
