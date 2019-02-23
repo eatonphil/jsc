@@ -27,6 +27,13 @@ export function build(buildDirectory: string, program: string) {
          ],
        }));
 
+  try {
+    cp.execSync(['clang-format -i' , path.join(buildDirectory, 'lib.cc')].join(' '));
+    cp.execSync(['clang-format -i' , path.join(buildDirectory, 'jsc.cc')].join(' '));
+  } catch (e) {
+    // Oh well
+  }
+
   // Build library
   cp.execSync('../node_modules/.bin/node-gyp configure', { cwd: buildDirectory });
   cp.execSync('../node_modules/.bin/node-gyp build', { cwd: buildDirectory });

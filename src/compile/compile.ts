@@ -95,7 +95,7 @@ function compileFunctionDeclaration(
 
   context.emit(`void ${mangled}(const FunctionCallbackInfo<Value>& _args) {`);
   context.emitStatement('Isolate* isolate = _args.GetIsolate()', context.depth + 1);
-  context.emitStatement('std::vector<Local<Value>> args(_args.Length());', context.depth + 1);
+  context.emitStatement('std::vector<Local<Value>> args(_args.Length())', context.depth + 1);
   context.emitStatement('for (int i = 0; i < _args.Length(); i++) args[i] = _args[i]', context.depth + 1);
   context.emit(`${tcoLabel}:\n`, context.depth);
 
@@ -723,7 +723,5 @@ export function compile(program: ts.Program) {
   });
 
   emitPostfix(buffer);
-  return buffer.join('\n') // Format nicely
-         .replace(/\n\n+/g, '\n\n') // No more than two consecutive newlines
-         .replace(/\n\n+}/g, '\n}'); // Now more than one newline before an ending brace
+  return buffer.join('\n');
 }

@@ -3,7 +3,8 @@ import { Type } from './type';
 
 export function v8String(local: Local | string) {
   if (typeof local === 'string') {
-    return `String::NewFromUtf8(isolate, "${local}")`;
+    const safe = local.replace('\n', '\\\n');
+    return `String::NewFromUtf8(isolate, "${safe}")`;
   }
 
   if (local.type === Type.V8String) {
