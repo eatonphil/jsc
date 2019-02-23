@@ -2,6 +2,7 @@
   "compilerOptions": {
     "target": "ES5",
     "outDir": "./build",
-    "rootDir": "./src/"
+    "rootDir": "./src/",
+    "sourceMap": true
   }
 }

@@ -1,0 +1,17 @@
+{
+  "defaultSeverity": "error",
+  "extends": [
+    "tslint:recommended", "tslint-config-prettier"
+  ],
+  "jsRules": {},
+  "rules": {
+    "member-access": false,
+    "interface-name": false,
+    "no-empty": [true, "allow-empty-functions"],
+    "quotemark": [true, "single"],
+    "no-unused-variable": true,
+    "no-default-export": true,
+    "indent": [true, "spaces", 2]
+  },
+  "rulesDirectory": []
+}

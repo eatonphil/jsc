@@ -9,21 +9,23 @@ export function build(buildDirectory: string, program: string) {
   try {
     rimraf.sync(buildDirectory);
     fs.mkdirSync(buildDirectory);
-  } catch (e) {}
+  } catch (e) {
+    // Ignore
+  }
 
   fs.writeFileSync(path.join(buildDirectory, 'lib.cc'),
-		   fs.readFileSync(path.join(__dirname, '../src/compile/lib.cc')));
+       fs.readFileSync(path.join(__dirname, '../src/compile/lib.cc')));
   fs.writeFileSync(path.join(buildDirectory, 'jsc.cc'),
-		   program);
+       program);
   fs.writeFileSync(path.join(buildDirectory, 'binding.gyp'),
-		   JSON.stringify({
-		     targets: [
-		       {
-			 target_name: 'jsc',
-			 sources: ['jsc.cc'],
-		       },
-		     ],
-		   }));
+       JSON.stringify({
+         targets: [
+           {
+       sources: ['jsc.cc'],
+       target_name: 'jsc',
+           },
+         ],
+       }));
 
   // Build library
   cp.execSync('../node_modules/.bin/node-gyp configure', { cwd: buildDirectory });

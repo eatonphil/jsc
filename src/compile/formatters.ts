@@ -60,12 +60,12 @@ export function boolean(local: Local) {
 export function cast(targetLocal: Local, castingLocal: Local, assign?: boolean) {
   if (targetLocal.type !== castingLocal.type && targetLocal.initialized) {
     const type = targetLocal.type === Type.V8String ? 'String' :
-		 targetLocal.type === Type.V8Number ? 'Number' :
-		 targetLocal.type === Type.V8Boolean ? 'Boolean' :
-		 targetLocal.type === Type.V8Array ? 'Array' :
-		 targetLocal.type === Type.V8Object ? 'Object' :
-		 targetLocal.type === Type.V8Function ? 'Function' :
-		 'Value';
+     targetLocal.type === Type.V8Number ? 'Number' :
+     targetLocal.type === Type.V8Boolean ? 'Boolean' :
+     targetLocal.type === Type.V8Array ? 'Array' :
+     targetLocal.type === Type.V8Object ? 'Object' :
+     targetLocal.type === Type.V8Function ? 'Function' :
+     'Value';
     if (assign) {
       targetLocal.type = castingLocal.type;
     }

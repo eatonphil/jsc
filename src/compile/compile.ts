@@ -1,5 +1,5 @@
-import * as path from 'path';
 import { readFileSync } from 'fs';
+import * as path from 'path';
 
 import * as ts from 'typescript';
 
@@ -44,7 +44,7 @@ function compileArrayLiteral(
   tmp.type = Type.V8Array;
   context.emitAssign(tmp, `Local<Array>::New(isolate, ${elements.length})`);
   const init = context.locals.symbol('init');
-  elements.forEach(function (e, i) {
+  elements.forEach((e, i) => {
     compileNode(context, init, e);
     context.emitStatement(`${tmp}->Set(${i}, ${init.name})`);
   });
@@ -58,7 +58,7 @@ function compileBlock(
   context: Context,
   block: ts.Block,
 ) {
-  block.statements.forEach(function (statement, i) {
+  block.statements.forEach((statement, i) => {
     compileNode({
       ...context,
       tco: i < block.statements.length - 1 ? {} : context.tco,
@@ -109,7 +109,7 @@ function compileFunctionDeclaration(
   };
 
   if (fd.parameters) {
-    fd.parameters.forEach(function (p, i) {
+    fd.parameters.forEach((p, i) => {
       compileParameter(childContext, p, i, i === fd.parameters.length - 1);
     });
   }
@@ -138,7 +138,7 @@ function compileCall(
     }
   }
 
-  const args = ce.arguments.map(function (argument) {
+  const args = ce.arguments.map((argument)=>{
     const arg = context.locals.symbol('arg');
     compileNode(context, arg, argument);
     return arg.name;
@@ -158,13 +158,13 @@ function compileCall(
 
     if (safe) {
       if (tcoLabel) {
-	args.forEach(function (arg, i) {
-	  context.emitStatement(`args[${i}] = ${arg}`);
-	});
+  args.forEach((arg, i) =>{
+    context.emitStatement(`args[${i}] = ${arg}`);
+  });
 
-	context.emitStatement(`goto ${tcoLabel}`);
-	context.emit('', 0);
-	return;
+  context.emitStatement(`goto ${tcoLabel}`);
+  context.emit('', 0);
+  return;
       }
 
       literal = true;
@@ -431,7 +431,6 @@ function compileWhile(
   context.emit('}');
 }
 
-
 function compileFor(
   context: Context,
   {
@@ -482,10 +481,10 @@ function compileImport(
   // TODO: validate import was exported
 
   const t = id.importClause &&
-	    id.importClause.namedBindings &&
-	    id.importClause.namedBindings.kind === ts.SyntaxKind.NamedImports ?
-	    id.importClause.namedBindings :
-	    { elements: undefined };
+      id.importClause.namedBindings &&
+      id.importClause.namedBindings.kind === ts.SyntaxKind.NamedImports ?
+      id.importClause.namedBindings :
+      { elements: undefined };
   if (t.elements) {
     // Only root-relative import paths for now
     const { text } = id.moduleSpecifier as ts.StringLiteral;
@@ -506,18 +505,18 @@ function compileImport(
     };
     compileSource(moduleContext, source);
 
-    t.elements.forEach(function (exportObject) {
+    t.elements.forEach((exportObject) =>{
       if (exportObject.propertyName) {
-	throw new Error('Unsupported import style: import { <> as <> } from \'<>\';');
+  throw new Error('Unsupported import style: import { <> as <> } from \'<>\';');
       }
 
       const exportName = identifier(exportObject.name);
       // Put the name the module will reference into context
       const local = context.locals.register(
-	mangle(context.moduleName, exportName));
+  mangle(context.moduleName, exportName));
       // Grab the location it will have been registered in the other module
       const real = moduleContext.locals.get(
-	mangle(moduleContext.moduleName, exportName));
+  mangle(moduleContext.moduleName, exportName));
       // Set the local lookup value to the real lookup value
       local.name = real.name;
       local.initialized = true;
@@ -552,8 +551,8 @@ function compileNode(
     }
     case ts.SyntaxKind.VariableDeclarationList: {
       const dl = node as ts.VariableDeclarationList;
-      dl.declarations.forEach(function (d) {
-	compileVariable(context, context.locals.symbol(), d);
+      dl.declarations.forEach((d)=>{
+  compileVariable(context, context.locals.symbol(), d);
       });
       break;
     }
@@ -565,6 +564,7 @@ function compileNode(
     case ts.SyntaxKind.PostfixUnaryExpression: {
       const pue = node as ts.PostfixUnaryExpression;
       compilePostfixUnaryExpression(context, destination, pue);
+      break;
     }
     case ts.SyntaxKind.CallExpression: {
       const ce = node as ts.CallExpression;
@@ -594,7 +594,7 @@ function compileNode(
       break;
     }
     case ts.SyntaxKind.NullKeyword:
-      context.emitAssign(destination, "Null(isolate)");
+      context.emitAssign(destination, 'Null(isolate)');
       break;
     case ts.SyntaxKind.TrueKeyword:
       destination.type = Type.V8Boolean;
@@ -672,7 +672,7 @@ export function compileSource(
   // TODO: mangle module name appropriately (e.g. replace('.', '_'), etc.)
   const moduleName = path.basename(ast.fileName, path.extname(ast.fileName));
   context.moduleName = moduleName;
-  ts.forEachChild(ast, function(node) {
+  ts.forEachChild(ast, (node)=>{
     compileNode(context, locals.symbol(), node);
   });
 }
@@ -694,7 +694,7 @@ export function compile(program: ts.Program) {
   emitPrefix(buffer);
 
   const tc = program.getTypeChecker();
-  program.getSourceFiles().forEach(function (source) {
+  program.getSourceFiles().forEach((source) =>{
     if (source.fileName.endsWith('.d.ts')) {
       return;
     }
@@ -703,13 +703,13 @@ export function compile(program: ts.Program) {
       buffer,
       depth: 0,
       emit(s: string, d?: number) {
-	emit.emit(this.buffer, d === undefined ? this.depth : d, s);
+  emit.emit(this.buffer, d === undefined ? this.depth : d, s);
       },
-      emitAssign(l: Local, s: string, d?:number) {
-	emit.assign(this.buffer, d === undefined ? this.depth : d, l, s);
+      emitAssign(l: Local, s: string, d?: number) {
+  emit.assign(this.buffer, d === undefined ? this.depth : d, l, s);
       },
-      emitStatement(s: string, d?:number) {
-	emit.statement(this.buffer, d === undefined ? this.depth : d, s);
+      emitStatement(s: string, d?: number) {
+  emit.statement(this.buffer, d === undefined ? this.depth : d, s);
       },
       labelCounter: 0,
       locals: new Locals,
@@ -722,6 +722,6 @@ export function compile(program: ts.Program) {
 
   emitPostfix(buffer);
   return buffer.join('\n') // Format nicely
-	       .replace(/\n\n+/g, '\n\n') // No more than two consecutive newlines
-	       .replace(/\n\n+}/g, '\n}'); // Now more than one newline before an ending brace
+         .replace(/\n\n+/g, '\n\n') // No more than two consecutive newlines
+         .replace(/\n\n+}/g, '\n}'); // Now more than one newline before an ending brace
 }

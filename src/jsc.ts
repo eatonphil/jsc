@@ -1,5 +1,5 @@
-import { compile } from './compile';
 import { build } from './build';
+import { compile } from './compile';
 import { parse } from './parse';
 
 function main(entrypoint: string) {

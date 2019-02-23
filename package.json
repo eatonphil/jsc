@@ -3,14 +3,18 @@
   "version": "0.0.1",
   "bin": "./build/jsc",
   "scripts": {
-    "install": "yarn tsc",
-    "test": "./tests/run.sh"
+    "install": "tsc",
+    "test": "./scripts/test.sh",
+    "lint": "./scripts/lint.sh",
+    "lint:fix": "./scripts/lint.sh --fix"
   },
   "dependencies": {
     "@types/node": "^11.9.4",
     "node-gyp": "^3.8.0",
     "rimraf": "^2.6.3",
     "tsc": "^1.20150623.0",
+    "tslint": "^5.12.1",
+    "tslint-config-prettier": "^1.18.0",
     "typescript": "^3.3.3"
   }
 }

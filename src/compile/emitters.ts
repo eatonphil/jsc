@@ -20,12 +20,12 @@ export function statement(
 export function assign(buffer: string[], depth: number, destination: Local, val: string) {
   if (!destination.initialized) {
     const type = destination.type === Type.V8Function ? 'Local<Function>' :
-		 destination.type === Type.V8Array ? 'Local<Array>' :
-		 destination.type === Type.V8Object ? 'Local<Object>' :
-		 destination.type === Type.V8String ? 'Local<String>' :
-		 destination.type === Type.V8Number ? 'Local<Number>' :
-		 destination.type === Type.V8Boolean ? 'Local<Boolean>' :
-		 'Local<Value>';
+     destination.type === Type.V8Array ? 'Local<Array>' :
+     destination.type === Type.V8Object ? 'Local<Object>' :
+     destination.type === Type.V8String ? 'Local<String>' :
+     destination.type === Type.V8Number ? 'Local<Number>' :
+     destination.type === Type.V8Boolean ? 'Local<Boolean>' :
+     'Local<Value>';
     statement(buffer, depth, `${type} ${destination.name} = ${val}`);
     destination.initialized = true;
     return;

@@ -1,9 +1,9 @@
 import { Type } from './type';
 
 export class Local {
-  initialized?: boolean;
-  name: string;
-  type: Type;
+  public initialized?: boolean;
+  public name: string;
+  public type: Type;
 
   constructor(name: string, initialized?: boolean, type?: Type) {
     this.name = name;
@@ -14,10 +14,11 @@ export class Local {
 
 let uniqueCounter = 0;
 
+// tslint:disable-next-line
 export class Locals {
-  map: { [local: string]: Local } = {};
+  public map: { [local: string]: Local } = {};
 
-  symbol(prefix?: string, initialized?: boolean, type?: Type) {
+  public symbol(prefix?: string, initialized?: boolean, type?: Type) {
     let mapped;
     do {
       mapped = 'sym_' + (prefix || 'anon') + '_' + (uniqueCounter++);
@@ -27,7 +28,7 @@ export class Locals {
     return this.map[mapped];
   }
 
-  register(local: string, initialized?: boolean, type?: Type) {
+  public register(local: string, initialized?: boolean, type?: Type) {
     let mapped = local;
     while (this.map[mapped]) {
       mapped = local + '_' + Object.keys(this.map);
@@ -36,11 +37,11 @@ export class Locals {
     return this.map[local];
   }
 
-  get(local: string) {
+  public get(local: string) {
     return this.map[local];
   }
 
-  clone() {
+  public clone() {
     const c = new Locals;
     c.map = { ...this.map };
     return c;
