@@ -10,8 +10,7 @@
     "no-empty": [true, "allow-empty-functions"],
     "quotemark": [true, "single"],
     "no-unused-variable": true,
-    "no-default-export": true,
-    "indent": [true, "spaces", 2]
+    "no-default-export": true
   },
   "rulesDirectory": []
 }

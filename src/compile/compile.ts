@@ -507,7 +507,7 @@ function compileImport(
 
     t.elements.forEach((exportObject) =>{
       if (exportObject.propertyName) {
-  throw new Error('Unsupported import style: import { <> as <> } from \'<>\';');
+	throw new Error('Unsupported import style: import { <> as <> } from \'<>\';');
       }
 
       const exportName = identifier(exportObject.name);
@@ -653,9 +653,11 @@ function compileNode(
     case ts.SyntaxKind.ImportDeclaration: {
       const id = node as ts.ImportDeclaration;
       compileImport(context, id);
+      break;
     }
     case ts.SyntaxKind.ExportDeclaration: {
       // TODO: add export to exports list;
+      break;
     }
     case ts.SyntaxKind.EndOfFileToken:
       break;
