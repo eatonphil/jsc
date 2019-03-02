@@ -25,6 +25,7 @@ export function assign(buffer: string[], depth: number, destination: Local, val:
      destination.type === Type.V8String ? 'Local<String>' :
      destination.type === Type.V8Number ? 'Local<Number>' :
      destination.type === Type.V8Boolean ? 'Local<Boolean>' :
+     destination.type === Type.Boolean ? 'bool' :
      'Local<Value>';
     statement(buffer, depth, `${type} ${destination.name} = ${val}`);
     destination.initialized = true;

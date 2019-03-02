@@ -4,13 +4,13 @@ export class Local {
   public initialized?: boolean;
   public name: string;
   public type: Type;
-  public reference?: boolean;
+  public tce?: boolean;
 
-  constructor(name: string, initialized?: boolean, type?: Type, reference?: boolean) {
+  constructor(name: string, initialized?: boolean, type?: Type, tce?: boolean) {
     this.name = name;
     this.initialized = initialized;
     this.type = type || Type.V8Value;
-    this.reference = reference || false;
+    this.tce = tce || false
   }
 }
 
@@ -33,7 +33,7 @@ export class Locals {
   public register(local: string, initialized?: boolean, type?: Type) {
     let mapped = local;
     while (this.map[mapped]) {
-      mapped = local + '_' + Object.keys(this.map);
+      mapped = local + '_' + Object.keys(this.map).length;
     }
     this.map[local] = new Local(mapped, initialized, type);
     return this.map[local];
