@@ -75,6 +75,10 @@ export function boolean(local: Local) {
 }
 
 export function cast(targetLocal: Local, castingLocal: Local, assign?: boolean) {
+  if (assign) {
+    targetLocal.type = castingLocal.type;
+  }
+
   if (isV8Type(targetLocal.type) && !isV8Type(castingLocal.type)) {
     if (castingLocal.type === Type.Function) {
       return cast(
@@ -88,9 +92,22 @@ export function cast(targetLocal: Local, castingLocal: Local, assign?: boolean) 
       );
     }
 
-    throw new Error('Unsupported cast of non-V8 rhs to V8 lhs.');
+    throw new Error('Unsupported cast of non-V8 rhs to V8 lhs: ' + Type[castingLocal.type]);
   } else if (!isV8Type(targetLocal.type) && isV8Type(castingLocal.type)) {
-    throw new Error('Unsupported cast of V8 rhs to non-V8 lhs.');
+    if (targetLocal.type === Type.Boolean) {
+      console.log(targetLocal.name, castingLocal.name);
+      return cast(
+	targetLocal,
+	{
+	  ...castingLocal,
+	  name: boolean(castingLocal),
+	  type: Type.Boolean,
+	},
+	assign,
+      );
+    }
+
+    throw new Error('Unsupported cast of V8 rhs to non-V8 lhs: ' + Type[targetLocal.type]);
   } else if (isV8Type(targetLocal.type) && isV8Type(castingLocal.type)) {
     if (targetLocal.type !== castingLocal.type && targetLocal.initialized) {
       const type = targetLocal.type === Type.V8String ? 'String' :
@@ -100,16 +117,16 @@ export function cast(targetLocal: Local, castingLocal: Local, assign?: boolean) 
 		   targetLocal.type === Type.V8Object ? 'Object' :
 		   targetLocal.type === Type.V8Function ? 'Function' :
 		   'Value';
-      if (assign) {
-	targetLocal.type = castingLocal.type;
-      }
-
       return `Local<${type}>::Cast(${castingLocal.name})`;
     } else if (assign) {
       targetLocal.type = castingLocal.type;
       return castingLocal.name;
     } 
   } else {
+    if (castingLocal.type === targetLocal.type) {
+      return castingLocal.name;
+
+    }
     throw new Error('Cannot cast between C++ types.');
   }
 }
