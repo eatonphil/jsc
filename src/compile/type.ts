@@ -7,6 +7,7 @@ export enum Type {
   V8Number,
   V8String,
   Boolean,
+  Function,
 }
 
 export function isV8Type(t: Type) {

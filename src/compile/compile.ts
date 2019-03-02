@@ -104,6 +104,7 @@ function compileFunctionDeclaration(
   const mangled = name === 'main' ? 'jsc_main' : mangle(context.moduleName, name);
 
   const safe = context.locals.register(mangled);
+  safe.type = Type.Function;
   const tcoLabel = `tail_recurse_${context.labelCounter++}`;
 
   context.emit(`void ${mangled}(const FunctionCallbackInfo<Value>& args) {`);
@@ -171,7 +172,7 @@ function compileCall(
   }
 
   const fn = context.locals.symbol('fn', false, Type.V8Function);
-  let literal = false;
+  const literal = false;
   if (ce.expression.kind === ts.SyntaxKind.Identifier) {
     const id = identifier(ce.expression as ts.Identifier);
     const mangled = mangle(context.moduleName, id);
@@ -188,18 +189,13 @@ function compileCall(
 	destination.tce = true;
 	return;
       }
-
-      literal = true;
-      context.emitAssign(fn, `FunctionTemplate::New(isolate, ${safe.name})->GetFunction()`);
-      context.emitStatement(`${fn.name}->SetName(${format.v8String(mangled)})`);
     }
   }
 
-  if (!literal) {
-    const tmp = context.locals.symbol('cast');
-    compileNode(context, tmp, ce.expression);
-    context.emitAssign(fn, `Local<Function>::Cast(${tmp.name})`);
-  }
+  // This may be unnecessary?
+  const tmp = context.locals.symbol('cast');
+  compileNode(context, tmp, ce.expression);
+  context.emitAssign(fn, format.v8Function(tmp));
 
   const argArrayName = args.length ? argArray.name : 0;
   const call = `${fn.name}->Call(${fn.name}, ${args.length}, ${argArrayName})`;
@@ -246,9 +242,9 @@ function compileIdentifier(
     const isDeclaration = !local.initialized;
 
     if (isDeclaration) {
-      context.emitAssign(destination, mangled);
+      context.emitAssign(destination, format.cast(destination, local, true));
     } else {
-      destination.name = local.name;
+      destination.name = format.cast(destination, local, true);
       propagateType(destination, local.type);
     }
 
@@ -304,12 +300,13 @@ function compilePostfixUnaryExpression(
   destination: Local,
   pue: ts.PostfixUnaryExpression,
 ) {
-  const lhs = context.locals.symbol('lhs');
-  propagateType(lhs, Type.V8Number);
+  let lhs = context.locals.symbol('pue');
+  // In `f++`, previous value of f is returned
   compileNode(context, lhs, pue.operand);
 
-  // f++ previous value of f is returned
-  propagateType(destination, Type.V8Number);
+  // Grab lhs
+  lhs = compileLhs(context, pue.operand);
+  propagateType(destination, lhs.type);
   context.emitAssign(destination, lhs.name);
 
   switch (pue.operator) {
@@ -325,6 +322,27 @@ function compilePostfixUnaryExpression(
   }
 }
 
+function compileLhs(
+  context: Context,
+  n: ts.Node,
+) {
+  if (n.kind === ts.SyntaxKind.Identifier) {
+    const global = 'isolate->GetCurrentContext()->Global()';
+
+    const id = identifier(n as ts.Identifier);
+    const mangled = mangle(context.moduleName, id);
+    const local = context.locals.get(mangled);
+    if (local) {
+      return local;
+    } else {
+      // This is an easy case, but punting for now.
+      throw new Error('Unsupported global assignment');
+    }
+  } else {
+    throw new Error('Unsupported lhs assignment node: ' + ts.SyntaxKind[n.kind]);
+  }
+}
+
 // This is the expression form, variable declaration/initialization
 // is entirely separate.
 function compileAssignment(
@@ -332,22 +350,7 @@ function compileAssignment(
   destination: Local,
   be: ts.BinaryExpression,
 ) {
-  // This logic can be broken out into a compileLhs helper.
-  if (be.left.kind === ts.SyntaxKind.Identifier) {
-    const global = 'isolate->GetCurrentContext()->Global()';
-
-    const id = identifier(be.left as ts.Identifier);
-    const mangled = mangle(context.moduleName, id);
-    const local = context.locals.get(mangled);
-    if (local) {
-      destination = local;
-    } else {
-      // This is an easy case, but punting for now.
-      throw new Error('Unsupported global assignment');
-    }
-  } else {
-    throw new Error('Unsupported lhs assignment node: ' + ts.SyntaxKind[be.left.kind]);
-  }
+  destination = compileLhs(context, be.left);
 
   const rhs = context.locals.symbol('rhs');
   compileNode(context, rhs, be.right);
@@ -583,8 +586,9 @@ function compileImport(
       // Grab the location it will have been registered in the other module
       const real = moduleContext.locals.get(
   mangle(moduleContext.moduleName, exportName));
-      // Set the local lookup value to the real lookup value
+      // Set the local lookup type & value to the real lookup value & type
       local.name = real.name;
+      propagateType(local, real.type);
       local.initialized = true;
     });
 

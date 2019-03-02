@@ -1,6 +1,18 @@
 import { Local } from './locals';
 import { isV8Type, Type } from './type';
 
+export function v8Function(local: Local | string) {
+  if (typeof local === 'string') {
+    return `Local<Function>::Cast(${local})`;
+  }
+
+  if (local.type === Type.V8Function) {
+    return local.name;
+  }
+
+  return `Local<Function>::Cast(${local.name})`;
+}
+
 export function v8String(local: Local | string) {
   if (typeof local === 'string') {
     const safe = local.replace('\n', '\\\n');
@@ -64,6 +76,18 @@ export function boolean(local: Local) {
 
 export function cast(targetLocal: Local, castingLocal: Local, assign?: boolean) {
   if (isV8Type(targetLocal.type) && !isV8Type(castingLocal.type)) {
+    if (castingLocal.type === Type.Function) {
+      return cast(
+	targetLocal,
+	{
+	  ...castingLocal,
+	  name: `FunctionTemplate::New(isolate, ${castingLocal.name})->GetFunction()`,
+	  type: Type.V8Function,
+	},
+	assign,
+      );
+    }
+
     throw new Error('Unsupported cast of non-V8 rhs to V8 lhs.');
   } else if (!isV8Type(targetLocal.type) && isV8Type(castingLocal.type)) {
     throw new Error('Unsupported cast of V8 rhs to non-V8 lhs.');
