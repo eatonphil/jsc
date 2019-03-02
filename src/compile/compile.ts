@@ -154,7 +154,14 @@ function compileCall(
 
   const args = ce.arguments.map((argument)=>{
     const arg = context.locals.symbol('arg');
+    const argName = arg.name;
     compileNode(context, arg, argument);
+    // Force assignment before TCE
+    if (!arg.initialized) {
+      const initializer = arg.name;
+      arg.name = argName;
+      context.emitAssign(arg, initializer);
+    }
     return arg.name;
   });
 
