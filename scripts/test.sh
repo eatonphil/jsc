@@ -7,3 +7,5 @@ for f in tests/*.js; do
     node build/jsc.js "$f"
     node bin
 done
+
+exit

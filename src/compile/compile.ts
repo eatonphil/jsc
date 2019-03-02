@@ -108,7 +108,6 @@ function compileFunctionDeclaration(
 
   context.emit(`void ${mangled}(const FunctionCallbackInfo<Value>& args) {`);
   context.emitStatement('Isolate* isolate = args.GetIsolate()', context.depth + 1);
-  context.emit(`${tcoLabel}:\n`, context.depth);
 
   const childContext = {
     ...context,
@@ -124,6 +123,8 @@ function compileFunctionDeclaration(
       compileParameter(childContext, p, i, i === fd.parameters.length - 1);
     });
   }
+
+  context.emit(`${tcoLabel}:\n`, context.depth);
 
   if (fd.body) {
     compileBlock(childContext, fd.body);
