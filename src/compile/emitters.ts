@@ -33,3 +33,13 @@ export function assign(buffer: string[], depth: number, destination: Local, val:
 
   statement(buffer, depth, `${destination.name} = ${val}`);
 }
+
+export function assignLiteral(buffer: string[], depth: number, destination: Local, val: string) {
+  if (!destination.initialized) {
+    destination.name = val;
+    destination.initialized = true;
+    return;
+  }
+
+  assign(buffer, depth, destination, val);
+}

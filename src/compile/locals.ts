@@ -4,11 +4,13 @@ export class Local {
   public initialized?: boolean;
   public name: string;
   public type: Type;
+  public reference?: boolean;
 
-  constructor(name: string, initialized?: boolean, type?: Type) {
+  constructor(name: string, initialized?: boolean, type?: Type, reference?: boolean) {
     this.name = name;
     this.initialized = initialized;
     this.type = type || Type.V8Value;
+    this.reference = reference || false;
   }
 }
 

@@ -13,6 +13,7 @@ interface Context {
   depth: number;
   emit: (s: string, d?: number) => void;
   emitAssign: (l: Local, s: string, d?: number) => void;
+  emitAssignLiteral: (l: Local, s: string, d?: number) => void;
   emitStatement: (s: string, d?: number) => void;
   labelCounter: number;
   locals: Locals;
@@ -79,8 +80,7 @@ function compileParameter(
 
   const id = identifier(p.name);
   const safe = context.locals.register(mangle(context.moduleName, id));
-  safe.name = `args[${n}]`;
-  safe.initialized = true;
+  context.emitAssign(safe, `args[${n}]`);
 }
 
 function compileFunctionDeclaration(
@@ -93,11 +93,8 @@ function compileFunctionDeclaration(
   const safe = context.locals.register(mangled);
   const tcoLabel = `tail_recurse_${context.labelCounter++}`;
 
-  context.emit(`void ${mangled}(const FunctionCallbackInfo<Value>& _args) {`);
-  context.emitStatement('Isolate* isolate = _args.GetIsolate()', context.depth + 1);
-  context.emitStatement('std::vector<Local<Value>> args(_args.Length())', context.depth + 1);
-  context.emitStatement('for (int i = 0; i < _args.Length(); i++) args[i] = _args[i]', context.depth + 1);
-  context.emit(`${tcoLabel}:\n`, context.depth);
+  context.emit(`void ${mangled}(const FunctionCallbackInfo<Value>& args) {`);
+  context.emitStatement('Isolate* isolate = args.GetIsolate()', context.depth + 1);
 
   const childContext = {
     ...context,
@@ -113,6 +110,8 @@ function compileFunctionDeclaration(
       compileParameter(childContext, p, i, i === fd.parameters.length - 1);
     });
   }
+
+  context.emit(`${tcoLabel}:\n`, context.depth);
 
   if (fd.body) {
     compileBlock(childContext, fd.body);
@@ -221,14 +220,15 @@ function compileIdentifier(
   const mangled = mangle(context.moduleName, val);
   const local = context.locals.get(mangled);
   if (local) {
-    if (!local.initialized) {
-      destination.name = mangled;
+    const isDeclaration = !local.initialized;
+
+    if (isDeclaration) {
+      context.emitAssign(destination, mangled);
     } else {
       destination.name = local.name;
       destination.type = local.type;
     }
 
-    destination.initialized = true;
     return;
   } else if (val === 'global') {
     val = global;
@@ -248,7 +248,7 @@ function compileReturn(
 
   // Should only be uninitialized if this was tail-call optimized
   if (tmp.initialized) {
-    context.emitStatement(`_args.GetReturnValue().Set(${tmp.name})`);
+    context.emitStatement(`args.GetReturnValue().Set(${tmp.name})`);
     context.emitStatement('return');
   }
 }
@@ -302,11 +302,47 @@ function compilePostfixUnaryExpression(
   }
 }
 
+// This is the expression form, variable declaration/initialization
+// is entirely separate.
+function compileAssignment(
+  context: Context,
+  destination: Local,
+  be: ts.BinaryExpression,
+) {
+  if (be.left.kind === ts.SyntaxKind.Identifier) {
+    const global = 'isolate->GetCurrentContext()->Global()';
+
+    const id = identifier(be.left as ts.Identifier);
+    const mangled = mangle(context.moduleName, id);
+    const local = context.locals.get(mangled);
+    if (local) {
+      destination = local;
+    } else {
+      // This is an easy case, but punting for now.
+      throw new Error('Unsupported global assignment');
+    }
+  } else {
+    throw new Error('Unsupported lhs assignment node: ' + ts.SyntaxKind[be.left.kind]);
+  }
+
+  const rhs = context.locals.symbol('rhs');
+  compileNode(context, rhs, be.right);
+
+  context.emitAssign(destination, format.cast(destination, rhs, true));
+  return;
+}
+
 function compileBinaryExpression(
   context: Context,
   destination: Local,
   be: ts.BinaryExpression,
 ) {
+  // Assignment is a special case.
+  if (be.operatorToken.kind === ts.SyntaxKind.EqualsToken) {
+    compileAssignment(context, destination, be);
+    return;
+  }
+
   const lhs = context.locals.symbol('lhs');
   compileNode(context, lhs, be.left);
 
@@ -317,10 +353,6 @@ function compileBinaryExpression(
   let value;
 
   switch (be.operatorToken.kind) {
-    case ts.SyntaxKind.EqualsToken:
-      context.emitAssign(lhs, format.cast(lhs, rhs, true));
-      context.emitAssign(destination, format.cast(destination, lhs, true));
-      return;
     case ts.SyntaxKind.LessThanToken:
       bool = `${format.number(lhs)} < ${format.number(rhs)}`;
       break;
@@ -387,9 +419,12 @@ function compileVariable(
 
   const id = identifier(vd.name);
   const safe = context.locals.register(mangle(context.moduleName, id));
+  destination = safe;
+  const initializer = context.locals.symbol();
 
   if (vd.initializer) {
-    compileNode(context, safe, vd.initializer);
+    compileNode(context, initializer, vd.initializer);
+    context.emitAssign(destination, initializer.name);
   }
 }
 
@@ -639,7 +674,7 @@ function compileNode(
     case ts.SyntaxKind.NumericLiteral: {
       const nl = node as ts.NumericLiteral;
       destination.type = Type.V8Number;
-      context.emitAssign(destination, format.v8Number(nl.text));
+      context.emitAssignLiteral(destination, format.v8Number(nl.text));
       break;
     }
 
@@ -741,13 +776,16 @@ export function compile(program: ts.Program) {
       buffer,
       depth: 0,
       emit(s: string, d?: number) {
-  emit.emit(this.buffer, d === undefined ? this.depth : d, s);
+	emit.emit(this.buffer, d === undefined ? this.depth : d, s);
       },
       emitAssign(l: Local, s: string, d?: number) {
-  emit.assign(this.buffer, d === undefined ? this.depth : d, l, s);
+	emit.assign(this.buffer, d === undefined ? this.depth : d, l, s);
+      },
+      emitAssignLiteral(l: Local, s: string, d?: number) {
+	emit.assignLiteral(this.buffer, d === undefined ? this.depth : d, l, s);
       },
       emitStatement(s: string, d?: number) {
-  emit.statement(this.buffer, d === undefined ? this.depth : d, s);
+	emit.statement(this.buffer, d === undefined ? this.depth : d, s);
       },
       labelCounter: 0,
       locals: new Locals,
