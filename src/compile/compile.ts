@@ -30,6 +30,12 @@ function identifier(id: ts.Identifier): string {
   return id.escapedText as string;
 }
 
+function propagateType(local: Local, type: Type) {
+  if (!local.initialized) {
+    local.type = type;
+  }
+}
+
 function compileArrayLiteral(
   context: Context,
   destination: Local,
@@ -226,7 +232,7 @@ function compileIdentifier(
       context.emitAssign(destination, mangled);
     } else {
       destination.name = local.name;
-      destination.type = local.type;
+      propagateType(destination, local.type);
     }
 
     return;
@@ -262,6 +268,7 @@ function compileIf(
   context.emit('', 0);
 
   const test = context.locals.symbol();
+  test.type = Type.Boolean;
   compileNode(context, test, exp);
 
   context.emit(`if (${format.boolean(test)}) {`);
@@ -282,11 +289,11 @@ function compilePostfixUnaryExpression(
   pue: ts.PostfixUnaryExpression,
 ) {
   const lhs = context.locals.symbol('lhs');
-  lhs.type = Type.V8Number;
+  propagateType(lhs, Type.V8Number);
   compileNode(context, lhs, pue.operand);
 
   // f++ previous value of f is returned
-  destination.type = Type.V8Number;
+  propagateType(destination, Type.V8Number);
   context.emitAssign(destination, lhs.name);
 
   switch (pue.operator) {
@@ -309,6 +316,7 @@ function compileAssignment(
   destination: Local,
   be: ts.BinaryExpression,
 ) {
+  // This logic can be broken out into a compileLhs helper.
   if (be.left.kind === ts.SyntaxKind.Identifier) {
     const global = 'isolate->GetCurrentContext()->Global()';
 
@@ -384,8 +392,8 @@ function compileBinaryExpression(
       value = format.plus(lhs, rhs);
       break;
     case ts.SyntaxKind.MinusToken:
-      lhs.type = Type.V8Number;
-      rhs.type = Type.V8Number;
+      propagateType(lhs, Type.V8Number);
+      propagateType(rhs, Type.V8Number);
       value = `genericMinus(isolate, ${lhs.name}, ${rhs.name})`;
       break;
     default:
@@ -394,13 +402,13 @@ function compileBinaryExpression(
   }
 
   if (bool) {
-    destination.type = Type.V8Boolean;
+    propagateType(destination, Type.V8Boolean);
     context.emitAssign(destination, format.v8Boolean(bool));
   } else if (value) {
     if (lhs.type === Type.V8String || rhs.type === Type.V8String) {
-      destination.type = Type.V8String;
+      propagateType(destination, Type.V8String);
     } else if (lhs.type === Type.V8Number && rhs.type === Type.V8Number) {
-      destination.type = Type.V8Number;
+      propagateType(destination, Type.V8Number);
     }
 
     context.emitAssign(destination, value);
@@ -454,6 +462,7 @@ function compileWhile(
   }: ts.WhileStatement,
 ) {
   const test = context.locals.symbol();
+  test.type = Type.Boolean;
   compileNode(context, test, exp);
 
   context.emit(`while (${format.boolean(test)}) {`);
@@ -645,7 +654,7 @@ function compileNode(
 
     case ts.SyntaxKind.StringLiteral: {
       const sl = node as ts.StringLiteral;
-      destination.type = Type.V8String;
+      propagateType(destination, Type.V8String);
       context.emitAssign(destination, format.v8String(sl.text));
       break;
     }
@@ -653,11 +662,11 @@ function compileNode(
       context.emitAssign(destination, 'Null(isolate)');
       break;
     case ts.SyntaxKind.TrueKeyword:
-      destination.type = Type.V8Boolean;
+      propagateType(destination, Type.V8Boolean);
       context.emitAssign(destination, format.v8Boolean(true));
       break;
     case ts.SyntaxKind.FalseKeyword:
-      destination.type = Type.V8Boolean;
+      propagateType(destination, Type.V8Boolean);
       context.emitAssign(destination, format.v8Boolean(false));
       break;
 
@@ -673,7 +682,7 @@ function compileNode(
     case ts.SyntaxKind.FirstLiteralToken:
     case ts.SyntaxKind.NumericLiteral: {
       const nl = node as ts.NumericLiteral;
-      destination.type = Type.V8Number;
+      propagateType(destination, Type.V8Number);
       context.emitAssignLiteral(destination, format.v8Number(nl.text));
       break;
     }

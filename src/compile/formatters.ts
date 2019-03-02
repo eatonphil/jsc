@@ -51,6 +51,10 @@ export function v8Boolean(local: Local | string | boolean) {
 }
 
 export function boolean(local: Local) {
+  if (local.type === Type.Boolean) {
+    return local.name;
+  }
+
   if (local.type === Type.V8Boolean) {
     return `${local.name}->IsTrue()`;
   }

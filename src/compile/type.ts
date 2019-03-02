@@ -6,4 +6,5 @@ export enum Type {
   V8Boolean,
   V8Number,
   V8String,
+  Boolean,
 }
