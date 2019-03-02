@@ -1,2 +1,2 @@
-tslint src/*.ts src/**/*.ts $1
-
+eslint src/*.ts src/**/*.ts $1
+prettylint src/*.ts src/**/*.ts $1

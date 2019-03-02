@@ -6,11 +6,16 @@ export class Local {
   public type: Type;
   public tce?: boolean;
 
-  constructor(name: string, initialized?: boolean, type?: Type, tce?: boolean) {
+  public constructor(
+    name: string,
+    initialized?: boolean,
+    type?: Type,
+    tce?: boolean,
+  ) {
     this.name = name;
     this.initialized = initialized;
     this.type = type || Type.V8Value;
-    this.tce = tce || false
+    this.tce = tce || false;
   }
 }
 
@@ -23,7 +28,7 @@ export class Locals {
   public symbol(prefix?: string, initialized?: boolean, type?: Type) {
     let mapped;
     do {
-      mapped = 'sym_' + (prefix || 'anon') + '_' + (uniqueCounter++);
+      mapped = 'sym_' + (prefix || 'anon') + '_' + uniqueCounter++;
     } while (this.map[mapped]);
 
     this.map[mapped] = new Local(mapped, initialized, type);
@@ -44,7 +49,7 @@ export class Locals {
   }
 
   public clone() {
-    const c = new Locals;
+    const c = new Locals();
     c.map = { ...this.map };
     return c;
   }
