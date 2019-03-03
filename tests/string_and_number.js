@@ -1,8 +1,8 @@
-function a(b: number) {
+function a(b) {
   let c = 1;
   c = b;
 }
 
 function main() {
-  a(1);
+  a("foo");
 }

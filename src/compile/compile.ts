@@ -41,6 +41,21 @@ function propagateType(local: Local, type: Type) {
   }
 }
 
+function getType(context: Context, node: ts.Node) {
+  const flags = context.tc.getTypeAtLocation(node).getFlags();
+  const primitives = {
+    [ts.TypeFlags.String]: Type.V8String,
+    [ts.TypeFlags.Number]: Type.V8Number,
+    [ts.TypeFlags.Boolean]: Type.V8Boolean,
+  };
+
+  return primitives[flags] || Type.V8Value;
+}
+
+function setType(context: Context, node: ts.Node, local: Local) {
+  local.type = getType(context, node);
+}
+
 function compileArrayLiteral(
   context: Context,
   destination: Local,
@@ -84,7 +99,7 @@ function compileParameter(
   p: ts.ParameterDeclaration,
   n: number,
   last: boolean,
-  tailCallArgument?: string,
+  tailCallArgument?: Local,
 ) {
   if (
     p.name.kind === ts.SyntaxKind.ObjectBindingPattern ||
@@ -97,10 +112,14 @@ function compileParameter(
   const mangled = mangle(context.moduleName, id);
   if (!tailCallArgument) {
     const safe = context.locals.register(mangled);
-    context.emitAssign(safe, `args[${n}]`);
+    setType(context, p.name, safe);
+    const argn = context.locals.symbol('arg');
+    argn.name = `args[${n}]`;
+    context.emitAssign(safe, format.cast(safe, argn, true));
   } else {
     const safe = context.locals.get(mangled);
-    context.emitAssign(safe, tailCallArgument);
+    setType(context, p.name, safe);
+    context.emitAssign(safe, format.cast(safe, tailCallArgument, true));
   }
 }
 
@@ -114,6 +133,7 @@ function compileFunctionDeclaration(
 
   const safe = context.locals.register(mangled);
   safe.type = Type.Function;
+  safe.initialized = true;
   const tcoLabel = `tail_recurse_${context.labelCounter++}`;
 
   context.emit(`void ${mangled}(const FunctionCallbackInfo<Value>& args) {`);
@@ -178,7 +198,7 @@ function compileCall(
       arg.name = argName;
       context.emitAssign(arg, initializer);
     }
-    return arg.name;
+    return arg;
   });
 
   // Handle tail call elimination
@@ -210,7 +230,7 @@ function compileCall(
   const argArray = context.locals.symbol('args');
   if (!tcoLabel && args.length) {
     context.emitStatement(
-      `Local<Value> ${argArray.name}[] = { ${args.join(', ')} }`,
+      `Local<Value> ${argArray.name}[] = { ${args.map(a => a.name).join(', ')} }`,
     );
   }
 
@@ -266,7 +286,7 @@ function compileIdentifier(
     const isDeclaration = !local.initialized;
 
     if (isDeclaration) {
-      context.emitAssign(destination, format.cast(destination, local, true));
+      context.emitAssign(destination, format.cast(destination, local));
     } else {
       destination.name = format.cast(destination, local, true);
     }
@@ -368,11 +388,17 @@ function compileAssignment(
   be: ts.BinaryExpression,
 ) {
   destination = compileLhs(context, be.left);
+  if (destination.type !== getType(context, be.right)) {
+    const newType = context.locals.symbol('new_type');
+    destination.initialized = false;
+    destination.name = newType.name;
+    setType(context, be.left, destination);
+  }
 
   const rhs = context.locals.symbol('rhs');
   compileNode(context, rhs, be.right);
 
-  context.emitAssign(destination, format.cast(destination, rhs, true));
+  context.emitAssign(destination, format.cast(destination, rhs));
   return;
 }
 
@@ -478,7 +504,7 @@ function compileVariable(
 
   if (vd.initializer) {
     compileNode(context, initializer, vd.initializer);
-    propagateType(destination, initializer.type);
+    setType(context, vd.name, destination);
     context.emitAssign(destination, format.cast(destination, initializer));
   }
 }
