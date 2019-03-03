@@ -79,13 +79,13 @@ tail_recurse_0:
     return;
   }
 
-  Local<Number> sym_arg_17 =
+  Local<Number> sym_arg_20 =
       genericMinus(isolate, tco_n, Number::New(isolate, 1));
-  Local<Value> sym_arg_20 = tco_b;
-  Local<Value> sym_arg_21 = genericPlus(isolate, tco_a, tco_b);
-  tco_n = sym_arg_17;
-  tco_a = sym_arg_20;
-  tco_b = sym_arg_21;
+  Local<Value> sym_arg_23 = tco_b;
+  Local<Value> sym_arg_24 = genericPlus(isolate, tco_a, tco_b);
+  tco_n = Local<Value>::Cast(sym_arg_20);
+  tco_a = sym_arg_23;
+  tco_b = sym_arg_24;
   goto tail_recurse_0;
 
   return;
@@ -95,21 +95,24 @@ void jsc_main(const FunctionCallbackInfo<Value> &args) {
   Isolate *isolate = args.GetIsolate();
 tail_recurse_1:
 
-  Local<Value> sym_args_32[] = {Number::New(isolate, 50),
+  Local<Value> sym_args_33[] = {Number::New(isolate, 50),
                                 Number::New(isolate, 0),
                                 Number::New(isolate, 1)};
-  Local<Function> sym_fn_33 =
-      FunctionTemplate::New(isolate, tco_fib)->GetFunction();
-  sym_fn_33->SetName(String::NewFromUtf8(isolate, "tco_fib"));
-  Local<Value> sym_arg_28 = sym_fn_33->Call(sym_fn_33, 3, sym_args_32);
+  Local<Value> sym_arg_29 =
+      Local<Function>::Cast(
+          Local<Value>::Cast(
+              FunctionTemplate::New(isolate, tco_fib)->GetFunction()))
+          ->Call(Local<Function>::Cast(Local<Value>::Cast(
+                     FunctionTemplate::New(isolate, tco_fib)->GetFunction())),
+                 3, sym_args_33);
 
-  Local<Value> sym_args_34[] = {sym_arg_28};
+  Local<Value> sym_args_35[] = {sym_arg_29};
   Local<Value> sym_parent_37 = isolate->GetCurrentContext()->Global()->Get(
       String::NewFromUtf8(isolate, "console"));
-  Local<Value> sym_cast_36 =
+  Local<Value> sym_fn_36 =
       sym_parent_37.As<Object>()->Get(String::NewFromUtf8(isolate, "log"));
-  Local<Function> sym_fn_35 = Local<Function>::Cast(sym_cast_36);
-  Local<Value> sym_block_27 = sym_fn_35->Call(sym_fn_35, 1, sym_args_34);
+  Local<Value> sym_block_28 = Local<Function>::Cast(sym_fn_36)->Call(
+      Local<Function>::Cast(sym_fn_36), 1, sym_args_35);
 
   return;
 }
