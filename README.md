@@ -33,6 +33,7 @@ $ node bin/index.js
 * Prototype functions
 * Nested functions
 * Closures
+* And much, much more!
 
 ### Code produced
 
@@ -61,56 +62,57 @@ Gets compiled to:
 ```cpp
 #include "lib.cc"
 
-void tco_fib(const FunctionCallbackInfo<Value>& _args) {
-  Isolate* isolate = _args.GetIsolate();
-  std::vector<Local<Value>> args(_args.Length());;
-  for (int i = 0; i < _args.Length(); i++) args[i] = _args[i];
+void tco_fib(const FunctionCallbackInfo<Value> &args) {
+  Isolate *isolate = args.GetIsolate();
+  Local<Value> tco_n = args[0];
+  Local<Value> tco_a = args[1];
+  Local<Value> tco_b = args[2];
 tail_recurse_0:
 
-  Local<Number> sym_rhs_4 = Number::New(isolate, 0);
-  Local<Boolean> sym_anon_2 = args[0]->StrictEquals(sym_rhs_4) ? True(isolate) : False(isolate);
-  if (sym_anon_2->IsTrue()) {
-    _args.GetReturnValue().Set(args[1]);
+  if (tco_n->StrictEquals(Number::New(isolate, 0))) {
+    args.GetReturnValue().Set(tco_a);
     return;
   }
 
-  Local<Number> sym_rhs_11 = Number::New(isolate, 1);
-  Local<Boolean> sym_anon_9 = args[0]->StrictEquals(sym_rhs_11) ? True(isolate) : False(isolate);
-  if (sym_anon_9->IsTrue()) {
-    _args.GetReturnValue().Set(args[2]);
+  if (tco_n->StrictEquals(Number::New(isolate, 1))) {
+    args.GetReturnValue().Set(tco_b);
     return;
   }
 
-  Local<Number> sym_rhs_19 = Number::New(isolate, 1);
-  Local<Value> sym_arg_17 = genericMinus(isolate, args[0], sym_rhs_19);
-  Local<Value> sym_arg_21 = genericPlus(isolate, args[1], args[2]);
-  args[0] = sym_arg_17;
-  args[1] = args[2];
-  args[2] = sym_arg_21;
+  Local<Number> sym_arg_20 =
+      genericMinus(isolate, tco_n, Number::New(isolate, 1));
+  Local<Value> sym_arg_23 = tco_b;
+  Local<Value> sym_arg_24 = genericPlus(isolate, tco_a, tco_b);
+  tco_n = Local<Value>::Cast(sym_arg_20);
+  tco_a = sym_arg_23;
+  tco_b = sym_arg_24;
   goto tail_recurse_0;
 
   return;
 }
 
-void jsc_main(const FunctionCallbackInfo<Value>& _args) {
-  Isolate* isolate = _args.GetIsolate();
-  std::vector<Local<Value>> args(_args.Length());;
-  for (int i = 0; i < _args.Length(); i++) args[i] = _args[i];
+void jsc_main(const FunctionCallbackInfo<Value> &args) {
+  Isolate *isolate = args.GetIsolate();
 tail_recurse_1:
 
-  Local<Number> sym_arg_29 = Number::New(isolate, 100);
-  Local<Number> sym_arg_30 = Number::New(isolate, 0);
-  Local<Number> sym_arg_31 = Number::New(isolate, 1);
-  Local<Value> sym_args_32[] = { sym_arg_29, sym_arg_30, sym_arg_31 };
-  Local<Function> sym_fn_33 = FunctionTemplate::New(isolate, tco_fib)->GetFunction();
-  sym_fn_33->SetName(String::NewFromUtf8(isolate, "tco_fib"));
-  Local<Value> sym_arg_28 = sym_fn_33->Call(sym_fn_33, 3, sym_args_32);
+  Local<Value> sym_args_33[] = {Number::New(isolate, 50),
+                                Number::New(isolate, 0),
+                                Number::New(isolate, 1)};
+  Local<Value> sym_arg_29 =
+      Local<Function>::Cast(
+          Local<Value>::Cast(
+              FunctionTemplate::New(isolate, tco_fib)->GetFunction()))
+          ->Call(Local<Function>::Cast(Local<Value>::Cast(
+                     FunctionTemplate::New(isolate, tco_fib)->GetFunction())),
+                 3, sym_args_33);
 
-  Local<Value> sym_args_34[] = { sym_arg_28 };
-  Local<Value> sym_parent_37 = isolate->GetCurrentContext()->Global()->Get(String::NewFromUtf8(isolate, "console"));
-  Local<Value> sym_anon_36 = sym_parent_37.As<Object>()->Get(String::NewFromUtf8(isolate, "log"));
-  Local<Function> sym_fn_35 = Local<Function>::Cast(sym_anon_36);
-  Local<Value> sym_anon_27 = sym_fn_35->Call(sym_fn_35, 1, sym_args_34);
+  Local<Value> sym_args_35[] = {sym_arg_29};
+  Local<Value> sym_parent_37 = isolate->GetCurrentContext()->Global()->Get(
+      String::NewFromUtf8(isolate, "console"));
+  Local<Value> sym_fn_36 =
+      sym_parent_37.As<Object>()->Get(String::NewFromUtf8(isolate, "log"));
+  Local<Value> sym_block_28 = Local<Function>::Cast(sym_fn_36)->Call(
+      Local<Function>::Cast(sym_fn_36), 1, sym_args_35);
 
   return;
 }
@@ -121,5 +123,3 @@ void Init(Local<Object> exports) {
 
 NODE_MODULE(NODE_GYP_MODULE_NAME, Init)
 ```
-
-By running `./build.sh examples/recursion.js`.

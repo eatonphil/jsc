@@ -1,4 +1,4 @@
-import { test } from './tests/import_test.js';
+import { test } from './tests/etc/import_helper.js';
 
 function main() {
   test();

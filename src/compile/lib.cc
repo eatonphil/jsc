@@ -59,7 +59,7 @@ inline Local<String> toString(Isolate* isolate, Local<Value> s) {
 
 inline Local<Value> genericPlus(Isolate* isolate, Local<Value> l, Local<Value> r) {
   if (l->IsString() || r->IsString()) {
-    return String::Concat(toString(isolate, l), toString(isolate, r));
+    return String::Concat(isolate, toString(isolate, l), toString(isolate, r));
   }
 
   return Number::New(isolate, toNumber(l) + toNumber(r));
@@ -74,5 +74,5 @@ inline Local<Number> numberPlus(Isolate* isolate, Local<Number> l, Local<Number>
 }
 
 inline Local<String> stringPlus(Isolate* isolate, Local<String> l, Local<String> r) {
-  return String::Concat(toString(isolate, l), toString(isolate, r));
+  return String::Concat(isolate, toString(isolate, l), toString(isolate, r));
 }

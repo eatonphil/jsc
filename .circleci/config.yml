@@ -2,27 +2,18 @@ version: 2
 jobs:
   build:
     docker:
-      - image: dlanguage/ldc
+      - image: node:11-slim
     steps:
       - checkout
       - run:
           name: Install debian-packaged dependencies
           command: |
             apt update
-            apt install -y git build-essential curl build-essential
-            curl -sL https://deb.nodesource.com/setup_11.x | bash -
-            apt update && apt install -y nodejs
+            # curl/apt-transport-https for yarn, python, build-essential for node-gyp
+            apt install -y curl apt-transport-https python build-essential
             curl -sS https://dl.yarnpkg.com/debian/pubkey.gpg | apt-key add -
             echo "deb https://dl.yarnpkg.com/debian/ stable main" | tee /etc/apt/sources.list.d/yarn.list
             apt update && apt install -y yarn
-            ln -s $(which ldc2) /usr/local/bin/ldc
-      - run:
-          name: Install btest
-          command: |
-            git clone https://github.com/briansteffens/btest
-            cd btest
-            make
-            make install
       - run:
           name: Install Node dependencies, run tests
           command: |
