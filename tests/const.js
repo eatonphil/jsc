@@ -1,5 +1,4 @@
 function main() {
-    let a = 1;
-    a = 2;
-    console.log(a);
+  const a = 1;
+  const b = "foo";
 }

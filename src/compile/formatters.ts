@@ -78,11 +78,7 @@ export function boolean(local: Local) {
   return `toBoolean(${local.name})`;
 }
 
-export function cast(
-  targetLocal: Local,
-  castingLocal: Local,
-  force?: boolean,
-) {
+export function cast(targetLocal: Local, castingLocal: Local, force?: boolean) {
   const tlType = targetLocal.type;
   if (!targetLocal.initialized && !force) {
     targetLocal.type = castingLocal.type;
@@ -102,7 +98,9 @@ export function cast(
     }
 
     throw new Error(
-      `Unsupported cast of non-V8 rhs (${Type[castingLocal.type]}) to V8 lhs (${Type[tlType]})`,
+      `Unsupported cast of non-V8 rhs (${Type[castingLocal.type]}) to V8 lhs (${
+        Type[tlType]
+      })`,
     );
   } else if (!isV8Type(tlType) && isV8Type(castingLocal.type)) {
     if (tlType === Type.Boolean) {
@@ -118,7 +116,9 @@ export function cast(
     }
 
     throw new Error(
-      `Unsupported cast of V8 rhs (${Type[castingLocal.type]}) to non-V8 lhs (${Type[tlType]})`,
+      `Unsupported cast of V8 rhs (${Type[castingLocal.type]}) to non-V8 lhs (${
+        Type[tlType]
+      })`,
     );
   } else if (isV8Type(tlType) && isV8Type(castingLocal.type)) {
     if (tlType !== castingLocal.type && (targetLocal.initialized || force)) {

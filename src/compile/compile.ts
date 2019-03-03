@@ -230,7 +230,9 @@ function compileCall(
   const argArray = context.locals.symbol('args');
   if (!tcoLabel && args.length) {
     context.emitStatement(
-      `Local<Value> ${argArray.name}[] = { ${args.map(a => a.name).join(', ')} }`,
+      `Local<Value> ${argArray.name}[] = { ${args
+        .map((a) => a.name)
+        .join(', ')} }`,
     );
   }
 
@@ -388,12 +390,6 @@ function compileAssignment(
   be: ts.BinaryExpression,
 ) {
   destination = compileLhs(context, be.left);
-  if (destination.type !== getType(context, be.right)) {
-    const newType = context.locals.symbol('new_type');
-    destination.initialized = false;
-    destination.name = newType.name;
-    setType(context, be.left, destination);
-  }
 
   const rhs = context.locals.symbol('rhs');
   compileNode(context, rhs, be.right);
@@ -489,6 +485,7 @@ function compileVariable(
   context: Context,
   destination: Local,
   vd: ts.VariableDeclaration,
+  flags: ts.NodeFlags,
 ) {
   if (
     vd.name.kind === ts.SyntaxKind.ObjectBindingPattern ||
@@ -504,8 +501,20 @@ function compileVariable(
 
   if (vd.initializer) {
     compileNode(context, initializer, vd.initializer);
-    setType(context, vd.name, destination);
-    context.emitAssign(destination, format.cast(destination, initializer));
+
+    let forceConversion = false;
+    if ((flags & ts.NodeFlags.Const) === ts.NodeFlags.Const) {
+      setType(context, vd.name, destination);
+    } else {
+      // Cannot infer on types at declaration without a separate pass.
+      destination.type = Type.V8Value;
+      forceConversion = true;
+    }
+
+    context.emitAssign(
+      destination,
+      format.cast(destination, initializer, forceConversion),
+    );
   }
 }
 
@@ -672,6 +681,7 @@ function compileNode(context: Context, destination: Local, node: ts.Node) {
           },
           context.locals.symbol('var'),
           d,
+          dl.flags,
         );
       });
       break;
