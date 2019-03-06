@@ -6,8 +6,11 @@ export enum Type {
   V8Boolean,
   V8Number,
   V8String,
+  V8Null,
   Boolean,
   Function,
+  Number,
+  String,
 }
 
 export function isV8Type(t: Type) {
@@ -19,6 +22,7 @@ export function isV8Type(t: Type) {
     case Type.V8Boolean:
     case Type.V8Number:
     case Type.V8String:
+    case Type.V8Null:
       return true;
     default:
       return false;

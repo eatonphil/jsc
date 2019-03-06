@@ -3,29 +3,17 @@ import * as path from 'path';
 
 import * as ts from 'typescript';
 
-import * as emit from './emitters';
-import * as format from './formatters';
-import { Local, Locals } from './locals';
+import * as builtin from './builtin';
+import { Context } from './Context';
+import * as emit from './emit';
+import * as format from './format';
+import * as literal from './literal';
+import { Local } from './Local';
+import { Locals } from './Locals';
 import { Type } from './type';
+import { parse } from '../parse';
 
-interface Context {
-  buffer: string[];
-  depth: number;
-  emit: (s: string, d?: number) => void;
-  emitAssign: (l: Local, s: string | null, d?: number) => void;
-  emitAssignLiteral: (l: Local, s: string, d?: number) => void;
-  emitStatement: (s: string, d?: number) => void;
-  labelCounter: number;
-  locals: Locals;
-  moduleName: string;
-  tc: ts.TypeChecker;
-  tco: {
-    [name: string]: {
-      label: string;
-      parameters: ts.NodeArray<ts.ParameterDeclaration>;
-    };
-  };
-}
+let labelCounter = 0;
 
 function mangle(moduleName: string, local: string) {
   return moduleName + '_' + local;
@@ -35,25 +23,19 @@ function identifier(id: ts.Identifier): string {
   return id.escapedText as string;
 }
 
-function propagateType(local: Local, type: Type) {
-  if (!local.initialized) {
-    local.type = type;
-  }
-}
-
 function getType(context: Context, node: ts.Node) {
   const flags = context.tc.getTypeAtLocation(node).getFlags();
   const primitives = {
     [ts.TypeFlags.String]: Type.V8String,
-    [ts.TypeFlags.Number]: Type.V8Number,
-    [ts.TypeFlags.Boolean]: Type.V8Boolean,
+    [ts.TypeFlags.Number]: Type.Number,
+    [ts.TypeFlags.Boolean]: Type.Boolean,
   };
 
   return primitives[flags] || Type.V8Value;
 }
 
 function setType(context: Context, node: ts.Node, local: Local) {
-  local.type = getType(context, node);
+  local.setType(getType(context, node));
 }
 
 function compileArrayLiteral(
@@ -68,16 +50,17 @@ function compileArrayLiteral(
     tmp = context.locals.symbol('arr_lit');
   }
 
-  tmp.type = Type.V8Array;
-  context.emitAssign(tmp, `Local<Array>::New(isolate, ${elements.length})`);
+  tmp.setType(Type.V8Array);
+  tmp.setCode(`Array::New(isolate, ${elements.length})`);
   const init = context.locals.symbol('init');
   elements.forEach((e, i) => {
     compileNode(context, init, e);
-    context.emitStatement(`${tmp}->Set(${i}, ${init.name})`);
+    context.emitStatement(`${tmp}->Set(${i}, ${init.getCode()})`);
   });
 
-  if (tmp === destination) {
-    context.emitAssign(destination, tmp.name);
+  if (tmp !== destination) {
+    destination.setType(Type.V8Array);
+    builtin.assign(context, destination, tmp);
   }
 }
 
@@ -114,12 +97,12 @@ function compileParameter(
     const safe = context.locals.register(mangled);
     setType(context, p.name, safe);
     const argn = context.locals.symbol('arg');
-    argn.name = `args[${n}]`;
-    context.emitAssign(safe, format.cast(safe, argn, true));
+    argn.setCode(`args[${n}]`);
+    builtin.assign(context, safe, argn);
   } else {
     const safe = context.locals.get(mangled);
     setType(context, p.name, safe);
-    context.emitAssign(safe, format.cast(safe, tailCallArgument, true));
+    builtin.assign(context, safe, tailCallArgument);
   }
 }
 
@@ -131,10 +114,10 @@ function compileFunctionDeclaration(
   const mangled =
     name === 'main' ? 'jsc_main' : mangle(context.moduleName, name);
 
-  const safe = context.locals.register(mangled);
-  safe.type = Type.Function;
+  const safe = context.locals.register(mangled, Type.Function);
+  const safeName = safe.getCode();
   safe.initialized = true;
-  const tcoLabel = `tail_recurse_${context.labelCounter++}`;
+  const tcoLabel = `tail_recurse_${labelCounter++}`;
 
   context.emit(`void ${mangled}(const FunctionCallbackInfo<Value>& args) {`);
   context.emitStatement(
@@ -150,7 +133,7 @@ function compileFunctionDeclaration(
     // Copying might not allow for mutually tail-recursive functions?
     tco: {
       ...context.tco,
-      [safe.name]: { label: tcoLabel, parameters: fd.parameters },
+      [safeName]: { label: tcoLabel, parameters: fd.parameters },
     },
   };
 
@@ -160,14 +143,12 @@ function compileFunctionDeclaration(
     });
   }
 
-  context.emit(`${tcoLabel}:\n`, context.depth);
+  context.emitLabel(tcoLabel);
 
   if (fd.body) {
     compileBlock(childContext, fd.body);
   }
 
-  // Needed for labels at end of body
-  context.emitStatement('return', context.depth + 1);
   context.emit('}\n');
 }
 
@@ -182,22 +163,24 @@ function compileCall(
     const id = identifier(ce.expression as ts.Identifier);
     const safe = context.locals.get(mangle(context.moduleName, id));
 
-    if (safe && context.tco[safe.name]) {
-      tcoLabel = context.tco[safe.name].label;
-      tcoParameters = context.tco[safe.name].parameters;
+    if (safe && context.tco[safe.getCode()]) {
+      const safeName = safe.getCode();
+      tcoLabel = context.tco[safeName].label;
+      tcoParameters = context.tco[safeName].parameters;
     }
   }
 
   const args = ce.arguments.map((argument) => {
     const arg = context.locals.symbol('arg');
-    const argName = arg.name;
+    const argName = arg.getCode();
     compileNode(context, arg, argument);
-    // Force assignment before TCE
-    if (!arg.initialized) {
-      const initializer = arg.name;
-      arg.name = argName;
+    // Force initialization before TCE
+    if (tcoLabel && !arg.initialized) {
+      const initializer = arg.getCode();
+      arg.setCode(argName);
       context.emitAssign(arg, initializer);
     }
+
     return arg;
   });
 
@@ -230,8 +213,8 @@ function compileCall(
   const argArray = context.locals.symbol('args');
   if (!tcoLabel && args.length) {
     context.emitStatement(
-      `Local<Value> ${argArray.name}[] = { ${args
-        .map((a) => a.name)
+      `Local<Value> ${argArray.getCode()}[] = { ${args
+        .map((a) => a.getCode(Type.V8Value))
         .join(', ')} }`,
     );
   }
@@ -239,13 +222,14 @@ function compileCall(
   const fn = context.locals.symbol('fn');
   compileNode(context, fn, ce.expression);
 
-  const argArrayName = args.length ? argArray.name : 0;
-  const v8f = format.v8Function(fn);
+  const argArrayName = args.length ? argArray.getCode() : 0;
+  const v8f = fn.getCode(Type.V8Function);
   const call = `${v8f}->Call(${v8f}, ${args.length}, ${argArrayName})`;
-  context.emitAssign(destination, call);
+  builtin.assign(context, destination, call);
   context.emit('', 0);
 }
 
+// TODO: prototype lookup
 function compilePropertyAccess(
   context: Context,
   destination: Local,
@@ -254,10 +238,14 @@ function compilePropertyAccess(
   const exp = context.locals.symbol('parent');
   compileNode(context, exp, pae.expression);
   const id = identifier(pae.name);
-  context.emitAssign(
-    destination,
-    `${exp.name}.As<Object>()->Get(${format.v8String(id)})`,
+  const tmp = context.locals.symbol('prop_access');
+  tmp.setCode(
+    `${exp.getCode(Type.V8Object)}->Get(${format.v8String(
+      literal.string(id),
+      Type.String,
+    )})`,
   );
+  builtin.assign(context, destination, tmp);
 }
 
 function compileElementAccess(
@@ -271,7 +259,9 @@ function compileElementAccess(
   const arg = context.locals.symbol('arg');
   compileNode(context, arg, eae.argumentExpression);
 
-  context.emitAssign(destination, `${exp.name}.As<Object>()->Get(${arg.name})`);
+  const tmp = context.locals.symbol('elem_access');
+  tmp.setCode(`${exp.getCode(Type.V8Object)}->Get(${arg.getCode()})`);
+  builtin.assign(context, destination, tmp);
 }
 
 function compileIdentifier(
@@ -280,35 +270,37 @@ function compileIdentifier(
   id: ts.Identifier,
 ) {
   const global = 'isolate->GetCurrentContext()->Global()';
+  const tmp = context.locals.symbol('ident');
 
-  let val = identifier(id);
-  const mangled = mangle(context.moduleName, val);
+  let name = identifier(id);
+  const mangled = mangle(context.moduleName, name);
   const local = context.locals.get(mangled);
+
   if (local) {
-    const isDeclaration = !local.initialized;
-
-    if (isDeclaration) {
-      context.emitAssign(destination, format.cast(destination, local));
-    } else {
-      destination.name = format.cast(destination, local, true);
-    }
-
+    builtin.assign(context, destination, local, true);
     return;
-  } else if (val === 'global') {
-    val = global;
+  } else if (name === 'global') {
+    tmp.setCode(global);
   } else {
-    val = `${global}->Get(${format.v8String(val)})`;
+    tmp.setCode(
+      `${global}->Get(${format.v8String(literal.string(name), Type.String)})`,
+    );
   }
 
-  context.emitAssign(destination, val);
+  builtin.assign(context, destination, tmp);
 }
 
-function compileReturn(context: Context, exp: ts.Expression) {
+function compileReturn(context: Context, exp?: ts.Expression) {
+  if (!exp) {
+    context.emitStatement('return');
+    return;
+  }
+
   const tmp = context.locals.symbol('ret');
   compileNode(context, tmp, exp);
 
   if (!tmp.tce) {
-    context.emitStatement(`args.GetReturnValue().Set(${tmp.name})`);
+    context.emitStatement(`args.GetReturnValue().Set(${tmp.getCode(Type.V8Value)})`);
     context.emitStatement('return');
   }
 }
@@ -321,11 +313,10 @@ function compileIf(
 ) {
   context.emit('', 0);
 
-  const test = context.locals.symbol('if_test');
-  test.type = Type.Boolean;
+  const test = context.locals.symbol('if_test', Type.Boolean);
   compileNode(context, test, exp);
 
-  context.emit(`if (${format.boolean(test)}) {`);
+  context.emit(`if (${test.getCode(Type.Boolean)}) {`);
   const c = { ...context, depth: context.depth + 1 };
   compileNode(c, context.locals.symbol('then'), thenStmt);
 
@@ -342,60 +333,72 @@ function compilePostfixUnaryExpression(
   destination: Local,
   pue: ts.PostfixUnaryExpression,
 ) {
-  let lhs = context.locals.symbol('pue');
-  // In `f++`, previous value of f is returned
+  const lhs = context.locals.symbol('pue');
   compileNode(context, lhs, pue.operand);
+  // In `f++`, previous value of f is returned
+  builtin.assign(context, destination, lhs);
 
-  // Grab lhs
-  lhs = compileLhs(context, pue.operand);
-  propagateType(destination, lhs.type);
-  context.emitAssign(destination, lhs.name);
+  const tmp = context.locals.symbol('pue_tmp');
 
   switch (pue.operator) {
     case ts.SyntaxKind.PlusPlusToken:
-      context.emitAssign(lhs, format.v8Number(`${format.number(lhs)} + 1`));
+      builtin.plus(context, tmp, lhs, 1);
       break;
     case ts.SyntaxKind.MinusMinusToken:
-      context.emitAssign(lhs, format.v8Number(`${format.number(lhs)} - 1`));
+      builtin.plus(context, tmp, lhs, -1);
       break;
     default:
       throw new Error('Unsupported operator: ' + ts.SyntaxKind[pue.operator]);
       break;
   }
+
+  compileAssign(context, destination, pue.operand, tmp);
 }
 
-function compileLhs(context: Context, n: ts.Node) {
-  if (n.kind === ts.SyntaxKind.Identifier) {
-    const id = identifier(n as ts.Identifier);
+function compileAssign(
+  context: Context,
+  destination: Local,
+  left: ts.Node,
+  rhs: Local,
+) {
+  let tmp;
+
+  if (left.kind === ts.SyntaxKind.Identifier) {
+    const id = identifier(left as ts.Identifier);
     const mangled = mangle(context.moduleName, id);
-    const local = context.locals.get(mangled);
-    if (local) {
-      return local;
+    tmp = context.locals.get(mangled);
+    if (tmp) {
+      builtin.assign(context, tmp, rhs);
     } else {
       // This is an easy case, but punting for now.
       throw new Error('Unsupported global assignment');
     }
-  } else {
-    throw new Error(
-      'Unsupported lhs assignment node: ' + ts.SyntaxKind[n.kind],
+  } else if (left.kind === ts.SyntaxKind.ElementAccessExpression) {
+    const eae = left as ts.ElementAccessExpression;
+
+    const exp = context.locals.symbol('parent');
+    compileNode(context, exp, eae.expression);
+
+    const arg = context.locals.symbol('arg');
+    compileNode(context, arg, eae.argumentExpression);
+
+    context.emitStatement(
+      `${exp.getCode(Type.V8Object)}->Set(${arg.getCode()}, ${rhs.getCode(
+        Type.V8Value,
+      )})`,
     );
+
+    return;
   }
-}
 
-// This is the expression form, variable declaration/initialization
-// is entirely separate.
-function compileAssignment(
-  context: Context,
-  destination: Local,
-  be: ts.BinaryExpression,
-) {
-  destination = compileLhs(context, be.left);
+  if (tmp) {
+    builtin.assign(context, destination, tmp);
+    return;
+  }
 
-  const rhs = context.locals.symbol('rhs');
-  compileNode(context, rhs, be.right);
-
-  context.emitAssign(destination, format.cast(destination, rhs));
-  return;
+  throw new Error(
+    'Unsupported lhs assignment node: ' + ts.SyntaxKind[left.kind],
+  );
 }
 
 function compileBinaryExpression(
@@ -405,7 +408,22 @@ function compileBinaryExpression(
 ) {
   // Assignment is a special case.
   if (be.operatorToken.kind === ts.SyntaxKind.EqualsToken) {
-    compileAssignment(context, destination, be);
+    const rhs = context.locals.symbol('rhs');
+    compileNode(context, rhs, be.right);
+
+    compileAssign(context, destination, be.left, rhs);
+    return;
+  } else if (be.operatorToken.kind === ts.SyntaxKind.PlusEqualsToken) {
+    const rhs = context.locals.symbol('rhs');
+    compileNode(context, rhs, be.right);
+
+    const lhs = context.locals.symbol('lhs');
+    compileNode(context, lhs, be.left);
+
+    const tmp = context.locals.symbol('plus_eq');
+    builtin.plus(context, tmp, lhs, rhs);
+
+    compileAssign(context, destination, be.left, tmp);
     return;
   }
 
@@ -415,74 +433,53 @@ function compileBinaryExpression(
   const rhs = context.locals.symbol('rhs');
   compileNode(context, rhs, be.right);
 
-  let bool;
-  let value;
+  const tmp = context.locals.symbol('bin_exp');
 
   switch (be.operatorToken.kind) {
     case ts.SyntaxKind.LessThanToken:
-      bool = `${format.number(lhs)} < ${format.number(rhs)}`;
+      builtin.lessThan(context, tmp, lhs, rhs);
       break;
     case ts.SyntaxKind.GreaterThanToken:
-      bool = `${format.number(lhs)} > ${format.number(rhs)}`;
+      builtin.greaterThan(context, tmp, lhs, rhs);
       break;
     case ts.SyntaxKind.LessThanEqualsToken:
-      bool = `${format.number(lhs)} <= ${format.number(rhs)}`;
+      builtin.lessThanEquals(context, tmp, lhs, rhs);
       break;
     case ts.SyntaxKind.GreaterThanEqualsToken:
-      bool = `${format.number(lhs)} >= ${format.number(rhs)}`;
+      builtin.greaterThanEquals(context, tmp, lhs, rhs);
       break;
     case ts.SyntaxKind.ExclamationEqualsToken:
-      bool = `!${lhs.name}->Equals(${rhs.name})`;
+      builtin.notEquals(context, tmp, lhs, rhs);
       break;
     case ts.SyntaxKind.EqualsEqualsToken:
-      bool = `${lhs.name}->Equals(${rhs.name})`;
+      builtin.equals(context, tmp, lhs, rhs);
       break;
     case ts.SyntaxKind.ExclamationEqualsEqualsToken:
-      bool = `!${lhs.name}->StrictEquals(${rhs.name})`;
+      builtin.strictNotEquals(context, tmp, lhs, rhs);
       break;
     case ts.SyntaxKind.EqualsEqualsEqualsToken:
-      bool = `${lhs.name}->StrictEquals(${rhs.name})`;
+      builtin.strictEquals(context, tmp, lhs, rhs);
       break;
     case ts.SyntaxKind.AmpersandAmpersandToken:
-      bool = `${format.boolean(lhs)} ? (${format.boolean(rhs)} ? ${
-        rhs.name
-      } : ${lhs.name}) : ${lhs.name}`;
-      break;
-    case ts.SyntaxKind.AsteriskToken:
-      value = format.times(lhs, rhs);
+      builtin.and(context, tmp, lhs, rhs);
       break;
     case ts.SyntaxKind.PlusToken:
-      value = format.plus(lhs, rhs);
+      builtin.plus(context, tmp, lhs, rhs);
+      break;
+    case ts.SyntaxKind.AsteriskToken:
+      builtin.times(context, tmp, lhs, rhs);
       break;
     case ts.SyntaxKind.MinusToken:
-      value = format.minus(lhs, rhs);
-      // Operation must produce a number.
-      propagateType(lhs, Type.V8Number);
-      propagateType(rhs, Type.V8Number);
+      builtin.minus(context, tmp, lhs, rhs);
       break;
     default:
       throw new Error(
-        'Unsupported operator: ' + ts.SyntaxKind[be.operatorToken.kind],
+        'Unsupported binary operator: ' + ts.SyntaxKind[be.operatorToken.kind],
       );
       break;
   }
 
-  if (bool) {
-    if (destination.type === Type.Boolean) {
-      destination.name = bool;
-    } else {
-      propagateType(destination, Type.V8Boolean);
-      context.emitAssign(destination, format.v8Boolean(bool));
-    }
-  } else if (value) {
-    if (lhs.type === Type.V8String || rhs.type === Type.V8String) {
-      propagateType(destination, Type.V8String);
-    } else if (lhs.type === Type.V8Number && rhs.type === Type.V8Number) {
-      propagateType(destination, Type.V8Number);
-    }
-
-    destination.name = value;
-  }
+  builtin.assign(context, destination, tmp);
 }
 
 function compileVariable(
@@ -506,19 +503,15 @@ function compileVariable(
   if (vd.initializer) {
     compileNode(context, initializer, vd.initializer);
 
-    let forceConversion = false;
-    if ((flags & ts.NodeFlags.Const) === ts.NodeFlags.Const) {
-      setType(context, vd.name, destination);
-    } else {
-      // Cannot infer on types at declaration without a separate pass.
-      destination.type = Type.V8Value;
-      forceConversion = true;
+    const isConst = (flags & ts.NodeFlags.Const) === ts.NodeFlags.Const;
+    const isExplicit = vd.type;
+    // Cannot infer on types at declaration without a separate pass.
+    if (isConst || isExplicit) {
+      //setType(context, vd.type || vd.name, destination);
+      destination.setType(initializer.getType());
     }
 
-    context.emitAssign(
-      destination,
-      format.cast(destination, initializer, forceConversion),
-    );
+    builtin.assign(context, destination, initializer);
   }
 }
 
@@ -531,22 +524,20 @@ function compileDo(
   const bodyContext = { ...context, depth: context.depth + 1 };
   compileNode(bodyContext, context.locals.symbol('do'), body);
 
-  const tmp = context.locals.symbol('test');
-  tmp.type = Type.Boolean;
+  const tmp = context.locals.symbol('test', Type.Boolean);
   compileNode(bodyContext, tmp, test);
 
-  context.emitStatement(`} while (${tmp.name})`);
+  context.emitStatement(`} while (${tmp.getCode()})`);
 }
 
 function compileWhile(
   context: Context,
   { statement: body, expression: exp }: ts.WhileStatement,
 ) {
-  const test = context.locals.symbol('while_test');
-  test.type = Type.Boolean;
+  const test = context.locals.symbol('while_test', Type.Boolean);
   compileNode(context, test, exp);
 
-  context.emit(`while (${format.boolean(test)}) {`);
+  context.emit(`while (${test.getCode(Type.Boolean)}) {`);
 
   const bodyContext = { ...context, depth: context.depth + 1 };
   compileNode(bodyContext, context.locals.symbol('while'), body);
@@ -570,8 +561,9 @@ function compileFor(
     compileNode(context, cond, condition);
   }
 
-  const label = `done_while_${context.labelCounter++}`;
-  context.emit(`while (true) {`);
+  const start = `start_for_${labelCounter++}`;
+  const end = `end_for_${labelCounter++}`;
+  context.emitLabel(start);
 
   const childContext = { ...context, depth: context.depth + 1 };
   const tmp = context.locals.symbol('body');
@@ -584,13 +576,15 @@ function compileFor(
   if (condition) {
     compileNode(childContext, cond, condition);
     childContext.emit('', 0);
-    childContext.emitStatement(`if (!${format.boolean(cond)}) goto ${label}`);
+    childContext.emitStatement(
+      `if (!${cond.getCode(Type.Boolean)}) goto ${end}`,
+    );
   }
 
-  context.emit('}');
+  context.emitStatement(`goto ${start}`);
 
   if (condition) {
-    context.emit(`${label}:`, 0);
+    context.emitLabel(end);
   }
 }
 
@@ -608,12 +602,7 @@ function compileImport(context: Context, id: ts.ImportDeclaration) {
     const { text } = id.moduleSpecifier as ts.StringLiteral;
     const fileName = path.resolve(text);
 
-    const source = ts.createSourceFile(
-      fileName,
-      readFileSync(fileName).toString(),
-      ts.ScriptTarget.ES2015,
-    );
-
+    const program = parse(fileName);
     const moduleContext = {
       ...context,
       depth: 0,
@@ -621,7 +610,8 @@ function compileImport(context: Context, id: ts.ImportDeclaration) {
       moduleName: '',
       tco: {},
     };
-    compileSource(moduleContext, source);
+
+    compile(program, moduleContext);
 
     t.elements.forEach((exportObject) => {
       if (exportObject.propertyName) {
@@ -640,8 +630,8 @@ function compileImport(context: Context, id: ts.ImportDeclaration) {
         mangle(moduleContext.moduleName, exportName),
       );
       // Set the local lookup type & value to the real lookup value & type
-      local.name = real.name;
-      propagateType(local, real.type);
+      local.setCode(real.getCode());
+      local.setType(real.getType());
       local.initialized = true;
     });
 
@@ -758,29 +748,29 @@ function compileNode(context: Context, destination: Local, node: ts.Node) {
 
     case ts.SyntaxKind.StringLiteral: {
       const sl = node as ts.StringLiteral;
-      propagateType(destination, Type.V8String);
-      context.emitAssign(destination, format.v8String(sl.text));
+      const local = context.locals.symbol('string', Type.String);
+      local.setCode(literal.string(sl.text));
+      builtin.assign(context, destination, local, true);
       break;
     }
-    case ts.SyntaxKind.NullKeyword:
-      context.emitAssign(destination, 'Null(isolate)');
+    case ts.SyntaxKind.NullKeyword: {
+      const local = context.locals.symbol('null', Type.V8Null);
+      local.setCode('Null(isolate)');
+      builtin.assign(context, destination, local, true);
       break;
-    case ts.SyntaxKind.TrueKeyword:
-      propagateType(destination, Type.V8Boolean);
-      if (destination.type === Type.Boolean) {
-        context.emitAssign(destination, 'true');
-      } else {
-        context.emitAssign(destination, format.v8Boolean(true));
-      }
+    }
+    case ts.SyntaxKind.TrueKeyword: {
+      const local = context.locals.symbol('boolean', Type.Boolean);
+      local.setCode(true);
+      builtin.assign(context, destination, local, true);
       break;
-    case ts.SyntaxKind.FalseKeyword:
-      propagateType(destination, Type.V8Boolean);
-      if (destination.type === Type.Boolean) {
-        context.emitAssign(destination, 'false');
-      } else {
-        context.emitAssign(destination, format.v8Boolean(false));
-      }
+    }
+    case ts.SyntaxKind.FalseKeyword: {
+      const local = context.locals.symbol('boolean', Type.Boolean);
+      local.setCode(false);
+      builtin.assign(context, destination, local, true);
       break;
+    }
     case ts.SyntaxKind.ArrayLiteralExpression: {
       const ale = node as ts.ArrayLiteralExpression;
       compileArrayLiteral(
@@ -797,8 +787,9 @@ function compileNode(context: Context, destination: Local, node: ts.Node) {
     case ts.SyntaxKind.FirstLiteralToken:
     case ts.SyntaxKind.NumericLiteral: {
       const nl = node as ts.NumericLiteral;
-      propagateType(destination, Type.V8Number);
-      context.emitAssignLiteral(destination, format.v8Number(nl.text));
+      const local = context.locals.symbol('num', Type.Number);
+      local.setCode(+nl.text);
+      builtin.assign(context, destination, local, true);
       break;
     }
 
@@ -901,9 +892,12 @@ NODE_MODULE(NODE_GYP_MODULE_NAME, Init)\n`,
   );
 }
 
-export function compile(program: ts.Program) {
-  const buffer = [];
-  emitPrefix(buffer);
+export function compile(program: ts.Program, context?: Context) {
+  const isDependency = !!context;
+  const buffer = context ? context.buffer : [];
+  if (!isDependency) {
+    emitPrefix(buffer);
+  }
 
   const tc = program.getTypeChecker();
   program.getSourceFiles().forEach((source) => {
@@ -911,30 +905,36 @@ export function compile(program: ts.Program) {
       return;
     }
 
-    const context = {
-      buffer,
-      depth: 0,
-      emit(s: string, d?: number) {
-        emit.emit(this.buffer, d === undefined ? this.depth : d, s);
-      },
-      emitAssign(l: Local, s: string | null, d?: number) {
-        emit.assign(this.buffer, d === undefined ? this.depth : d, l, s);
-      },
-      emitAssignLiteral(l: Local, s: string, d?: number) {
-        emit.assignLiteral(this.buffer, d === undefined ? this.depth : d, l, s);
-      },
-      emitStatement(s: string, d?: number) {
-        emit.statement(this.buffer, d === undefined ? this.depth : d, s);
-      },
-      labelCounter: 0,
-      locals: new Locals(),
-      moduleName: '',
-      tc,
-      tco: {},
-    };
+    // May be wrong to recreate this on every source file? But for now
+    // getSourceFile only returns the entrypoint, not imports...
+    if (!context) {
+      context = {
+	buffer,
+	depth: 0,
+	emit(s: string, d?: number) {
+          emit.emit(this.buffer, d === undefined ? this.depth : d, s);
+	},
+	emitAssign(l: Local, s: string | null, d?: number) {
+          emit.assign(this.buffer, d === undefined ? this.depth : d, l, s);
+	},
+	emitStatement(s: string, d?: number) {
+          emit.statement(this.buffer, d === undefined ? this.depth : d, s);
+	},
+	emitLabel(s: string, d?: number) {
+          emit.label(this.buffer, d === undefined ? this.depth : d, s);
+	},
+	locals: new Locals(),
+	moduleName: '',
+	tc,
+	tco: {},
+      };
+    }
     compileSource(context, source);
   });
 
-  emitPostfix(buffer);
+  if (!isDependency) {
+    emitPostfix(buffer);
+  }
+
   return buffer.join('\n');
 }

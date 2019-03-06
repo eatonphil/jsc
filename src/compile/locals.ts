@@ -1,23 +1,5 @@
+import { Local } from './Local';
 import { Type } from './type';
-
-export class Local {
-  public initialized?: boolean;
-  public name: string;
-  public type: Type;
-  public tce?: boolean;
-
-  public constructor(
-    name: string,
-    initialized?: boolean,
-    type?: Type,
-    tce?: boolean,
-  ) {
-    this.name = name;
-    this.initialized = initialized;
-    this.type = type || Type.V8Value;
-    this.tce = tce || false;
-  }
-}
 
 let uniqueCounter = 0;
 
@@ -25,22 +7,22 @@ let uniqueCounter = 0;
 export class Locals {
   public map: { [local: string]: Local } = {};
 
-  public symbol(prefix?: string, initialized?: boolean, type?: Type) {
+  public symbol(prefix?: string, type?: Type) {
     let mapped;
     do {
       mapped = 'sym_' + (prefix || 'anon') + '_' + uniqueCounter++;
     } while (this.map[mapped]);
 
-    this.map[mapped] = new Local(mapped, initialized, type);
+    this.map[mapped] = new Local(mapped, type);
     return this.map[mapped];
   }
 
-  public register(local: string, initialized?: boolean, type?: Type) {
+  public register(local: string, type?: Type) {
     let mapped = local;
     while (this.map[mapped]) {
       mapped = local + '_' + Object.keys(this.map).length;
     }
-    this.map[local] = new Local(mapped, initialized, type);
+    this.map[local] = new Local(mapped, type);
     return this.map[local];
   }
 

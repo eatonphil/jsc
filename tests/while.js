@@ -3,7 +3,7 @@ function fib(i) {
     return i;
   }
 
-  let n = i;
+  let n: number = i;
   let previous_first = 0;
   let previous_second = 1;
   let next = 1;

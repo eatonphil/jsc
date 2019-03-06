@@ -32,12 +32,9 @@ export function build(buildDirectory: string, program: string) {
   );
 
   try {
-    cp.execSync(
-      ['clang-format -i', path.join(buildDirectory, 'lib.cc')].join(' '),
-    );
-    cp.execSync(
-      ['clang-format -i', path.join(buildDirectory, 'jsc.cc')].join(' '),
-    );
+    const clangFmtArgs = 'clang-format -i -style="{BasedOnStyle: llvm}"';
+    cp.execSync([clangFmtArgs, path.join(buildDirectory, 'lib.cc')].join(' '));
+    cp.execSync([clangFmtArgs, path.join(buildDirectory, 'jsc.cc')].join(' '));
   } catch (e) {
     // Oh well
   }
