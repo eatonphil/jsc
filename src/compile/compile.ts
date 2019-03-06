@@ -456,6 +456,9 @@ function compileBinaryExpression(
       break;
     case ts.SyntaxKind.MinusToken:
       value = format.minus(lhs, rhs);
+      // Operation must produce a number.
+      propagateType(lhs, Type.V8Number);
+      propagateType(rhs, Type.V8Number);
       break;
     default:
       throw new Error(
