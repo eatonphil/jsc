@@ -11,5 +11,9 @@ function fib(n, a, b) {
 }
 
 function main() {
-  console.log(fib(50, 0, 1));
+  console.time('fib');
+  console.log(fib(100, 0, 1));
+  console.timeEnd('fib');
 }
+
+main();

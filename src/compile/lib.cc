@@ -65,14 +65,26 @@ inline Local<Value> genericPlus(Isolate* isolate, Local<Value> l, Local<Value> r
   return Number::New(isolate, toNumber(l) + toNumber(r));
 }
 
-inline Local<Number> genericMinus(Isolate* isolate, Local<Value> l, Local<Value> r) {
-  return Number::New(isolate, toNumber(l) - toNumber(r));
-}
-
 inline Local<Number> numberPlus(Isolate* isolate, Local<Number> l, Local<Number> r) {
-  return Number::New(isolate, toNumber(l) + toNumber(r));
+  return Number::New(isolate, l->Value() + r->Value());
 }
 
 inline Local<String> stringPlus(Isolate* isolate, Local<String> l, Local<String> r) {
   return String::Concat(isolate, toString(isolate, l), toString(isolate, r));
+}
+
+inline Local<Value> genericTimes(Isolate* isolate, Local<Value> l, Local<Value> r) {
+  return Number::New(isolate, toNumber(l) * toNumber(r));
+}
+
+inline Local<Number> numberTimes(Isolate* isolate, Local<Number> l, Local<Number> r) {
+  return Number::New(isolate, l->Value() * r->Value());
+}
+
+inline Local<Number> genericMinus(Isolate* isolate, Local<Value> l, Local<Value> r) {
+  return Number::New(isolate, toNumber(l) - toNumber(r));
+}
+
+inline Local<Number> numberMinus(Isolate* isolate, Local<Number> l, Local<Number> r) {
+  return Number::New(isolate, l->Value() - r->Value());
 }

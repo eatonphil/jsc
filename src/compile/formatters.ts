@@ -152,9 +152,25 @@ export function plus(l: Local, r: Local) {
   if (l.type === Type.V8String || r.type === Type.V8String) {
     // If either is a string, it must be a string.
     return `stringPlus(isolate, ${l.name}, ${r.name})`;
-  } else if (l.type === Type.V8Number) {
+  } else if (l.type === Type.V8Number && l.type === Type.V8Number) {
     return `numberPlus(isolate, ${l.name}, ${r.name})`;
   }
 
   return `genericPlus(isolate, ${l.name}, ${r.name})`;
+}
+
+export function times(l: Local, r: Local) {
+  if (l.type === Type.V8Number && r.type === Type.V8Number) {
+    return `numberTimes(isolate, ${l.name}, ${r.name})`;
+  }
+
+  return `genericTimes(isolate, ${l.name}, ${r.name})`;
+}
+
+export function minus(l: Local, r: Local) {
+  if (l.type === Type.V8Number && r.type === Type.V8Number) {
+    return `numberMinus(isolate, ${l.name}, ${r.name})`;
+  }
+
+  return `genericMinus(isolate, ${l.name}, ${r.name})`;
 }

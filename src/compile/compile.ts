@@ -448,13 +448,14 @@ function compileBinaryExpression(
         rhs.name
       } : ${lhs.name}) : ${lhs.name}`;
       break;
+    case ts.SyntaxKind.AsteriskToken:
+      value = format.times(lhs, rhs);
+      break;
     case ts.SyntaxKind.PlusToken:
       value = format.plus(lhs, rhs);
       break;
     case ts.SyntaxKind.MinusToken:
-      propagateType(lhs, Type.V8Number);
-      propagateType(rhs, Type.V8Number);
-      value = `genericMinus(isolate, ${lhs.name}, ${rhs.name})`;
+      value = format.minus(lhs, rhs);
       break;
     default:
       throw new Error(
