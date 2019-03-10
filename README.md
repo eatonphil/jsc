@@ -67,24 +67,20 @@ tail_recurse_1:
 
     ;
 
-  Local<Value> sym_bin_exp_63 = ((tco_n == 0) ? True(isolate) : False(isolate));
-  bool sym_if_test_58 = toBoolean(sym_bin_exp_63);
+  bool sym_if_test_58 = (tco_n == 0);
   if (sym_if_test_58) {
     args.GetReturnValue().Set(Number::New(isolate, tco_a));
     return;
   }
 
-  Local<Value> sym_bin_exp_75 = ((tco_n == 1) ? True(isolate) : False(isolate));
-  bool sym_if_test_70 = toBoolean(sym_bin_exp_75);
+  bool sym_if_test_70 = (tco_n == 1);
   if (sym_if_test_70) {
     args.GetReturnValue().Set(Number::New(isolate, tco_b));
     return;
   }
 
-  Local<Value> sym_bin_exp_88 = Number::New(isolate, (tco_n - 1));
-  Local<Value> sym_arg_83 = sym_bin_exp_88;
-  Local<Value> sym_bin_exp_97 = Number::New(isolate, (tco_a + tco_b));
-  Local<Value> sym_arg_92 = sym_bin_exp_97;
+  Local<Value> sym_arg_83 = Number::New(isolate, (tco_n - 1));
+  Local<Value> sym_arg_92 = Number::New(isolate, (tco_a + tco_b));
   tco_n = toNumber(sym_arg_83);
   tco_a = tco_b;
   tco_b = toNumber(sym_arg_92);

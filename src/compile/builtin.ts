@@ -67,7 +67,7 @@ export function plus(
     );
   }
 
-  assign(context, destination, tmp);
+  assign(context, destination, tmp, true);
 }
 
 export function times(
@@ -91,7 +91,7 @@ export function times(
     );
   }
 
-  assign(context, destination, tmp);
+  assign(context, destination, tmp, true);
 }
 
 export function minus(
@@ -133,7 +133,7 @@ export function minus(
     );
   }
 
-  assign(context, destination, tmp);
+  assign(context, destination, tmp, true);
 }
 
 export function and(context: Context, destination: Local, l: Local, r: Local) {
@@ -162,7 +162,7 @@ export function and(context: Context, destination: Local, l: Local, r: Local) {
     );
   }
 
-  assign(context, destination, tmp);
+  assign(context, destination, tmp, true);
 }
 
 export function strictEquals(
@@ -191,7 +191,7 @@ export function strictEquals(
     );
   }
 
-  assign(context, destination, tmp);
+  assign(context, destination, tmp, true);
 }
 
 export function strictNotEquals(
@@ -220,7 +220,7 @@ export function strictNotEquals(
     );
   }
 
-  assign(context, destination, tmp);
+  assign(context, destination, tmp, true);
 }
 
 export function equals(
@@ -243,7 +243,7 @@ export function equals(
     );
   }
 
-  assign(context, destination, tmp);
+  assign(context, destination, tmp, true);
 }
 
 export function notEquals(
@@ -266,7 +266,7 @@ export function notEquals(
     );
   }
 
-  assign(context, destination, tmp);
+  assign(context, destination, tmp, true);
 }
 
 export function greaterThan(
@@ -283,7 +283,7 @@ export function greaterThan(
     tmp.setCode(`${l.getCode(Type.Number)} > ${r.getCode(Type.Number)}`, true);
   }
 
-  assign(context, destination, tmp);
+  assign(context, destination, tmp, true);
 }
 
 export function greaterThanEquals(
