@@ -1,3 +1,4 @@
+#include <cmath>
 #include <iostream>
 #include <string>
 
@@ -45,9 +46,16 @@ inline bool toBoolean(Local<Value> n) {
 
 inline Local<String> toString(Isolate* isolate, Local<Value> s) {
   std::string cpps = "";
+  double d;
 
   if (s->IsNumber()) {
-    cpps = std::to_string(Local<Number>::Cast(s)->Value());
+    d = Local<Number>::Cast(s)->Value();
+    if (d == trunc(d)) {
+      // TODO: deal with double vs long long
+      cpps = std::to_string((long long)(d));
+    } else {
+      cpps = std::to_string(d);
+    }
   } else if (s->IsBoolean()) {
     cpps = Local<Boolean>::Cast(s)->IsTrue() ? "true" : "false";
   } else if (s->IsString()) {
@@ -65,8 +73,8 @@ inline Local<Value> genericPlus(Isolate* isolate, Local<Value> l, Local<Value> r
   return Number::New(isolate, toNumber(l) + toNumber(r));
 }
 
-inline Local<Number> numberPlus(Isolate* isolate, Local<Number> l, Local<Number> r) {
-  return Number::New(isolate, l->Value() + r->Value());
+inline Local<Number> genericMinus(Isolate* isolate, Local<Value> l, Local<Value> r) {
+  return Number::New(isolate, toNumber(l) - toNumber(r));
 }
 
 inline Local<String> stringPlus(Isolate* isolate, Local<String> l, Local<String> r) {
@@ -75,16 +83,4 @@ inline Local<String> stringPlus(Isolate* isolate, Local<String> l, Local<String>
 
 inline Local<Value> genericTimes(Isolate* isolate, Local<Value> l, Local<Value> r) {
   return Number::New(isolate, toNumber(l) * toNumber(r));
-}
-
-inline Local<Number> numberTimes(Isolate* isolate, Local<Number> l, Local<Number> r) {
-  return Number::New(isolate, l->Value() * r->Value());
-}
-
-inline Local<Number> genericMinus(Isolate* isolate, Local<Value> l, Local<Value> r) {
-  return Number::New(isolate, toNumber(l) - toNumber(r));
-}
-
-inline Local<Number> numberMinus(Isolate* isolate, Local<Number> l, Local<Number> r) {
-  return Number::New(isolate, l->Value() - r->Value());
 }

@@ -27,6 +27,7 @@ $ node bin/index.js
 * Basic primitive operations
 * Basic import support
 * Number, string, boolean and null literals
+* Basic value unboxing
 
 #### Not (yet) supported
 
@@ -40,7 +41,7 @@ $ node bin/index.js
 The following:
 
 ```js
-function fib(n, a, b) {
+function fib(n: number, a: number, b: number) {
     if (n == 0) {
         return a;
     }
@@ -51,75 +52,42 @@ function fib(n, a, b) {
 
     return fib(n - 1, b, a + b);
 }
-
-function main() {
-  console.log(fib(50, 0, 1));
-}
 ```
 
 Gets compiled to:
 
 ```cpp
-#include "lib.cc"
-
 void tco_fib(const FunctionCallbackInfo<Value> &args) {
   Isolate *isolate = args.GetIsolate();
-  Local<Value> tco_n = args[0];
-  Local<Value> tco_a = args[1];
-  Local<Value> tco_b = args[2];
-tail_recurse_0:
+  double tco_n = toNumber(args[0]);
+  double tco_a = toNumber(args[1]);
+  double tco_b = toNumber(args[2]);
 
-  if (tco_n->StrictEquals(Number::New(isolate, 0))) {
-    args.GetReturnValue().Set(tco_a);
-    return;
-  }
-
-  if (tco_n->StrictEquals(Number::New(isolate, 1))) {
-    args.GetReturnValue().Set(tco_b);
-    return;
-  }
-
-  Local<Number> sym_arg_20 =
-      genericMinus(isolate, tco_n, Number::New(isolate, 1));
-  Local<Value> sym_arg_23 = tco_b;
-  Local<Value> sym_arg_24 = genericPlus(isolate, tco_a, tco_b);
-  tco_n = Local<Value>::Cast(sym_arg_20);
-  tco_a = sym_arg_23;
-  tco_b = sym_arg_24;
-  goto tail_recurse_0;
-
-  return;
-}
-
-void jsc_main(const FunctionCallbackInfo<Value> &args) {
-  Isolate *isolate = args.GetIsolate();
 tail_recurse_1:
 
-  Local<Value> sym_args_33[] = {Number::New(isolate, 50),
-                                Number::New(isolate, 0),
-                                Number::New(isolate, 1)};
-  Local<Value> sym_arg_29 =
-      Local<Function>::Cast(
-          Local<Value>::Cast(
-              FunctionTemplate::New(isolate, tco_fib)->GetFunction()))
-          ->Call(Local<Function>::Cast(Local<Value>::Cast(
-                     FunctionTemplate::New(isolate, tco_fib)->GetFunction())),
-                 3, sym_args_33);
+    ;
 
-  Local<Value> sym_args_35[] = {sym_arg_29};
-  Local<Value> sym_parent_37 = isolate->GetCurrentContext()->Global()->Get(
-      String::NewFromUtf8(isolate, "console"));
-  Local<Value> sym_fn_36 =
-      sym_parent_37.As<Object>()->Get(String::NewFromUtf8(isolate, "log"));
-  Local<Value> sym_block_28 = Local<Function>::Cast(sym_fn_36)->Call(
-      Local<Function>::Cast(sym_fn_36), 1, sym_args_35);
+  Local<Value> sym_bin_exp_63 = ((tco_n == 0) ? True(isolate) : False(isolate));
+  bool sym_if_test_58 = toBoolean(sym_bin_exp_63);
+  if (sym_if_test_58) {
+    args.GetReturnValue().Set(Number::New(isolate, tco_a));
+    return;
+  }
 
-  return;
+  Local<Value> sym_bin_exp_75 = ((tco_n == 1) ? True(isolate) : False(isolate));
+  bool sym_if_test_70 = toBoolean(sym_bin_exp_75);
+  if (sym_if_test_70) {
+    args.GetReturnValue().Set(Number::New(isolate, tco_b));
+    return;
+  }
+
+  Local<Value> sym_bin_exp_88 = Number::New(isolate, (tco_n - 1));
+  Local<Value> sym_arg_83 = sym_bin_exp_88;
+  Local<Value> sym_bin_exp_97 = Number::New(isolate, (tco_a + tco_b));
+  Local<Value> sym_arg_92 = sym_bin_exp_97;
+  tco_n = toNumber(sym_arg_83);
+  tco_a = tco_b;
+  tco_b = toNumber(sym_arg_92);
+  goto tail_recurse_1;
 }
-
-void Init(Local<Object> exports) {
-  NODE_SET_METHOD(exports, "jsc_main", jsc_main);
-}
-
-NODE_MODULE(NODE_GYP_MODULE_NAME, Init)
 ```

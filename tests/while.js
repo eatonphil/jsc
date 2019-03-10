@@ -1,9 +1,11 @@
+import { mustequal } from './etc/assert.js';
+
 function fib(i) {
   if (i <= 1) {
     return i;
   }
 
-  let n = i;
+  let n: number = i;
   let previous_first = 0;
   let previous_second = 1;
   let next = 1;
@@ -19,5 +21,5 @@ function fib(i) {
 }
 
 function main() {
-  console.log(fib(50));
+  mustequal(fib(50), 12586269025);
 }

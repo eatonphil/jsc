@@ -1,4 +1,6 @@
-function fib(n, a, b) {
+import { mustequal } from './etc/assert.js';
+
+function fib(n: number, a: number, b: number) {
   if (n === 0) {
     return a;
   }
@@ -11,5 +13,6 @@ function fib(n, a, b) {
 }
 
 function main() {
-  console.log(fib(50, 0, 1));
+  const res = fib(50, 0, 1);
+  mustequal(res, 12586269025);
 }
