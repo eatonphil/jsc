@@ -599,13 +599,8 @@ function compileImport(context: Context, id: ts.ImportDeclaration) {
       ? id.importClause.namedBindings
       : { elements: undefined };
   if (t.elements) {
-    let { text } = id.moduleSpecifier as ts.StringLiteral;
-    if (!text.includes('.')) {
-      text += '.js';
-    }
-
+    const { text } = id.moduleSpecifier as ts.StringLiteral;
     const fileName = path.resolve(context.directory, text);
-    console.log(fileName);
 
     const program = parse(fileName);
     const moduleContext = {

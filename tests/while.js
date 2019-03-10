@@ -1,3 +1,5 @@
+import { mustequal } from './etc/assert.js';
+
 function fib(i) {
   if (i <= 1) {
     return i;
@@ -19,5 +21,5 @@ function fib(i) {
 }
 
 function main() {
-  console.log(fib(50));
+  mustequal(fib(50), 12586269025);
 }
