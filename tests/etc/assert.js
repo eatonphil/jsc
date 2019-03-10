@@ -1,5 +1,6 @@
 export function mustequal(a, b) {
   if (a === b) {
+    console.log('SUCCESS');
     return;
   }
 
