@@ -54,7 +54,7 @@ export function plus(
   } else if (l.getType() === Type.V8String || r.getType() === Type.V8String) {
     // If either is a string, it must be a string.
     tmp.setType(Type.V8String);
-    tmp.setCode(`stringPlus(isolate, ${l.getCode()}, ${r.getCode()})`);
+    tmp.setCode(`stringPlus(isolate, ${l.getCode(Type.V8Value)}, ${r.getCode(Type.V8Value)})`);
   } else if (l.getType() === Type.V8Number && r.getType() === Type.V8Number) {
     tmp.setType(Type.Number);
     tmp.setCode(`${l.getCode(Type.Number)} + ${r.getCode(Type.Number)}`, true);

@@ -124,7 +124,7 @@ export function format(expression: string, type: Type, desiredType?: Type) {
       return number(expression, type);
     }
   } else if (isV8Type(type) && isV8Type(desiredType)) {
-    // Functions and arrays are already objects.
+    // Function and Array are already Object
     if (
       desiredType === Type.V8Object &&
       (type === Type.V8Array || type === Type.V8Function)
@@ -132,9 +132,12 @@ export function format(expression: string, type: Type, desiredType?: Type) {
       return expression;
     }
 
+    // Everything is a Value
     if (desiredType === Type.V8Value) {
       return expression;
     }
+
+    // TODO: cannot just Cast() a Number as a String.
 
     const v8Type = {
       [Type.V8String]: 'String',
