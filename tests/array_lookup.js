@@ -1,4 +1,6 @@
+import { mustequal } from './etc/assert.js';
+
 function main() {
-  var a = Array(1, 11);
-  console.log(a[1]);
+  const a = Array(1, 11);
+  mustequal(a[1], 11);
 }

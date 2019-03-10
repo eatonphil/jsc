@@ -1,4 +1,4 @@
-import { mustequal }  from './tests/etc/assert.js';
+import { mustequal } from './etc/assert.js';
 
 function fib(n: number, a: number, b: number) {
   if (n === 0) {

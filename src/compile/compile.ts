@@ -1,4 +1,3 @@
-import { readFileSync } from 'fs';
 import * as path from 'path';
 
 import * as ts from 'typescript';
@@ -300,7 +299,9 @@ function compileReturn(context: Context, exp?: ts.Expression) {
   compileNode(context, tmp, exp);
 
   if (!tmp.tce) {
-    context.emitStatement(`args.GetReturnValue().Set(${tmp.getCode(Type.V8Value)})`);
+    context.emitStatement(
+      `args.GetReturnValue().Set(${tmp.getCode(Type.V8Value)})`,
+    );
     context.emitStatement('return');
   }
 }
@@ -598,9 +599,13 @@ function compileImport(context: Context, id: ts.ImportDeclaration) {
       ? id.importClause.namedBindings
       : { elements: undefined };
   if (t.elements) {
-    // Only root-relative import paths for now
-    const { text } = id.moduleSpecifier as ts.StringLiteral;
-    const fileName = path.resolve(text);
+    let { text } = id.moduleSpecifier as ts.StringLiteral;
+    if (!text.includes('.')) {
+      text += '.js';
+    }
+
+    const fileName = path.resolve(context.directory, text);
+    console.log(fileName);
 
     const program = parse(fileName);
     const moduleContext = {
@@ -868,9 +873,6 @@ function compileNode(context: Context, destination: Local, node: ts.Node) {
 
 export function compileSource(context: Context, ast: ts.SourceFile) {
   const locals = new Locals();
-  // TODO: mangle module name appropriately (e.g. replace('.', '_'), etc.)
-  const moduleName = path.basename(ast.fileName, path.extname(ast.fileName));
-  context.moduleName = moduleName;
   ts.forEachChild(ast, (node) => {
     compileNode(context, locals.symbol('source'), node);
   });
@@ -901,32 +903,38 @@ export function compile(program: ts.Program, context?: Context) {
 
   const tc = program.getTypeChecker();
   program.getSourceFiles().forEach((source) => {
-    if (source.fileName.endsWith('.d.ts')) {
+    const { fileName } = source;
+    if (fileName.endsWith('.d.ts')) {
       return;
     }
+
+    const directory = path.dirname(fileName);
+    // TODO: mangle module name appropriately (e.g. replace('.', '_'), etc.)
+    const moduleName = path.basename(fileName, path.extname(fileName));
 
     // May be wrong to recreate this on every source file? But for now
     // getSourceFile only returns the entrypoint, not imports...
     if (!context) {
       context = {
-	buffer,
-	depth: 0,
-	emit(s: string, d?: number) {
+        buffer,
+        depth: 0,
+        directory,
+        emit(s: string, d?: number) {
           emit.emit(this.buffer, d === undefined ? this.depth : d, s);
-	},
-	emitAssign(l: Local, s: string | null, d?: number) {
+        },
+        emitAssign(l: Local, s: string | null, d?: number) {
           emit.assign(this.buffer, d === undefined ? this.depth : d, l, s);
-	},
-	emitStatement(s: string, d?: number) {
+        },
+        emitStatement(s: string, d?: number) {
           emit.statement(this.buffer, d === undefined ? this.depth : d, s);
-	},
-	emitLabel(s: string, d?: number) {
+        },
+        emitLabel(s: string, d?: number) {
           emit.label(this.buffer, d === undefined ? this.depth : d, s);
-	},
-	locals: new Locals(),
-	moduleName: '',
-	tc,
-	tco: {},
+        },
+        locals: new Locals(),
+        moduleName,
+        tc,
+        tco: {},
       };
     }
     compileSource(context, source);

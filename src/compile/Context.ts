@@ -5,6 +5,7 @@ import { Locals } from './Locals';
 
 export interface Context {
   buffer: string[];
+  directory: string;
   depth: number;
   emit: (s: string, d?: number) => void;
   emitAssign: (l: Local, s: Local | string | null, d?: number) => void;
