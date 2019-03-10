@@ -370,6 +370,8 @@ function compileAssign(
     tmp = context.locals.get(mangled);
     if (tmp) {
       builtin.assign(context, tmp, rhs);
+      builtin.assign(context, destination, tmp);
+      return;
     } else {
       // This is an easy case, but punting for now.
       throw new Error('Unsupported global assignment');
@@ -390,10 +392,21 @@ function compileAssign(
     );
 
     return;
-  }
+  } else if (left.kind === ts.SyntaxKind.PropertyAccessExpression) {
+    const pae = left as ts.PropertyAccessExpression;
 
-  if (tmp) {
-    builtin.assign(context, destination, tmp);
+    const exp = context.locals.symbol('parent');
+    compileNode(context, exp, pae.expression);
+
+    const id = identifier(pae.name);
+
+    context.emitStatement(
+      `${exp.getCode(Type.V8Object)}->Set(${format.v8String(
+        literal.string(id),
+        Type.String,
+      )}, ${rhs.getCode(Type.V8Value)})`,
+    );
+
     return;
   }
 
